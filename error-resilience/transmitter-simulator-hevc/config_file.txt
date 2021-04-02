@@ -1,0 +1,12 @@
+#	Parameters file for the transmission simulation of an H.265/HEVC bitstream over an IP network
+#	Everything after the # will be ignored
+#	
+#	Matteo Naccari (matteo.naccari@gmail.com | matteo.naccari@polimi.it | matteo.naccari@lx.it.pt)
+#
+
+
+str.265         # Original input bitstream (uncorrupted)
+str_err.265     # File name for the transmitted (corrupted) bitstream
+..\error_plr_3  # File name for the error pattern
+0       # offset, i.e. the initial point to start reading the loss pattern file 
+0		# modality of corruption: 0 normal corruption, 1 corrupts all slices but intra ones, 2 corrupts intra slices only. VPS/PPS/SPS syntax elements are never corrupted.

@@ -1,0 +1,6 @@
+.vscode/
+.vs/
+*.user
+*.docx
+__pycache__/
+*.mex

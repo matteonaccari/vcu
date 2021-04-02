@@ -1,0 +1,434 @@
+From 2798fdf7889055306e25ba48c409febfa482c1d8 Mon Sep 17 00:00:00 2001
+From: Matteo Naccari <matteo.naccari@gmail.com>
+Date: Sat, 20 Feb 2021 20:27:34 +0000
+Subject: [PATCH] ITU-T Rec. P.910 spatial and temporal information
+
+- AV filter added with related documentation
+- Tested on yuv files as well as compressed clips
+---
+ doc/filters.texi                    |  46 ++++
+ libavfilter/Makefile                |   1 +
+ libavfilter/allfilters.c            |   1 +
+ libavfilter/vf_spatiotemporalinfo.c | 329 ++++++++++++++++++++++++++++
+ 4 files changed, 377 insertions(+)
+ create mode 100644 libavfilter/vf_spatiotemporalinfo.c
+
+diff --git a/doc/filters.texi b/doc/filters.texi
+index 426cb158da..dd5999e950 100644
+--- a/doc/filters.texi
++++ b/doc/filters.texi
+@@ -18730,6 +18730,52 @@ Set value which will be added to filtered result.
+ 
+ This filter supports the all above options as @ref{commands}.
+ 
++@section spatiotemporalinfo
++ITU-T P.910 spatial and temporal information.
++
++This filter computes two features to quantify how difficult to compress a video clip is. More specifically:
++@itemize
++@item
++The Spatial Information (SI) quantifies how difficult a video is to compress with intra frame coding tools (e.g. spatial transformation and intra prediction)
++
++@item
++The Temporal Information (TI) quantifies how difficult a video is to compress using inter frame coding tools (e.g. motion compensated prediction)
++@end itemize
++
++The following command line option is provided:
++
++@table @option
++@item stats_file
++If specified, the filter will use the named file to save the SI and TI pairs of
++each individual frame. Comma separated value format is assumed. When filename equals "-" the data is sent to
++standard output.
++@end table
++
++The spatial information is obtained by computing the standard deviation of the gradient's magnitude associated with each image pixel (luma component only).
++The Sobel operator is used in the gradient calculation.
++
++Conversely, the temporal information is obtained by computing the standard deviation of luma differences between the pixels of the current frame and the
++ones from the previous in display order.
++
++At frame level, an SI and TI pair is computed, being the TI for the first frame equal to zero by definition. The maxima SI and TI values, across all frames are selected as sequence-based
++spatial and temporal information.
++
++It is useful to note the following design choices:
++
++@itemize
++@item
++If a clip is composed of multiple cuts, the sequence-based SI and TI should be selected as the maximum across each shot. This is not performed in the current filter
++given that it would require a shot change detection algorithm
++
++@item
++When the content in the test set has different bit depths, the values of the SI and TI should be scaled accordingly to be then consistently visualised in a SI-TI scatter plot.
++More precisely, if one wants to take the 8 bits per pixel (bpp) as reference, each content with bpp (say 10) different from 8 should have its own SI and TI values divided by
++the quantity: 1 << (10 - 8).
++
++@end itemize
++
++More information can be found in the ITU-T Recommendation P.910 document @url{https://www.itu.int/rec/T-REC-P.910-200804-I/en}
++
+ @anchor{spp}
+ @section spp
+ 
+diff --git a/libavfilter/Makefile b/libavfilter/Makefile
+index 359ea7f903..b07c38c994 100644
+--- a/libavfilter/Makefile
++++ b/libavfilter/Makefile
+@@ -425,6 +425,7 @@ OBJS-$(CONFIG_SMARTBLUR_FILTER)              += vf_smartblur.o
+ OBJS-$(CONFIG_SOBEL_FILTER)                  += vf_convolution.o
+ OBJS-$(CONFIG_SOBEL_OPENCL_FILTER)           += vf_convolution_opencl.o opencl.o \
+                                                 opencl/convolution.o
++OBJS-$(CONFIG_SPATIOTEMPORALINFO_FILTER)     += vf_spatiotemporalinfo.o
+ OBJS-$(CONFIG_SPLIT_FILTER)                  += split.o
+ OBJS-$(CONFIG_SPP_FILTER)                    += vf_spp.o qp_table.o
+ OBJS-$(CONFIG_SR_FILTER)                     += vf_sr.o
+diff --git a/libavfilter/allfilters.c b/libavfilter/allfilters.c
+index 452c030706..835dfa3a71 100644
+--- a/libavfilter/allfilters.c
++++ b/libavfilter/allfilters.c
+@@ -404,6 +404,7 @@ extern AVFilter ff_vf_signature;
+ extern AVFilter ff_vf_smartblur;
+ extern AVFilter ff_vf_sobel;
+ extern AVFilter ff_vf_sobel_opencl;
++extern AVFilter ff_vf_spatiotemporalinfo;
+ extern AVFilter ff_vf_split;
+ extern AVFilter ff_vf_spp;
+ extern AVFilter ff_vf_sr;
+diff --git a/libavfilter/vf_spatiotemporalinfo.c b/libavfilter/vf_spatiotemporalinfo.c
+new file mode 100644
+index 0000000000..1d74eace4b
+--- /dev/null
++++ b/libavfilter/vf_spatiotemporalinfo.c
+@@ -0,0 +1,329 @@
++/*
++ * Copyright (c) 2021 Matteo Naccari <matteo.naccari@gmail.com>
++ *
++ * This file is part of FFmpeg.
++ *
++ * FFmpeg is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * FFmpeg is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with FFmpeg; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
++ */
++
++/**
++ * @file
++ * Spatial and temporal information associated with a video clip as specified by the ITU-T Recommendation P.910
++ *
++ * @see https://www.itu.int/rec/T-REC-P.910-200804-I/en
++ */
++
++#include "libavutil/avassert.h"
++#include "libavutil/imgutils.h"
++#include "libavutil/opt.h"
++#include "avfilter.h"
++#include "formats.h"
++#include "internal.h"
++#include "video.h"
++#include "framesync.h"
++
++typedef struct SpatioTemporalInfoContext {
++    const AVClass *class;
++    FFFrameSync fs;
++    FILE *stats_file;
++    char *stats_file_name;
++    int header_written;
++    uint64_t frame_cnt;
++    uint8_t *prev_y;
++    double si;
++    double ti;
++    double (*compute_si)(const uint8_t *y_buff, const int height, const int width, int stride);
++    double (*compute_ti)(const uint8_t *curr, const uint8_t *prev, const int height, const int width, int stride);
++} SpatioTemporalInfoContext;
++
++#define OFFSET(x) offsetof(SpatioTemporalInfoContext, x)
++#define FLAGS AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_VIDEO_PARAM
++static const AVOption spatiotemporalinfo_options[] = {
++    { "stats_file", "Set the file to store the spatial and temporal information", OFFSET(stats_file_name), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 0, FLAGS },
++    { NULL }
++};
++
++AVFILTER_DEFINE_CLASS(spatiotemporalinfo);
++
++static double compute_si_8bit(const uint8_t *y_buff, const int height, const int width, int stride)
++{
++    double horizontal_edge, vertical_edge, current_grad_mag, current_si;
++    double sum2_grad_mag = 0.0, sum_grad_mag = 0.0;
++    int counter = 0;
++
++    const uint8_t *line_up = y_buff;
++    const uint8_t *line_cu = y_buff + stride;
++    const uint8_t *line_dw = y_buff + (stride << 1);
++
++    for (int r = 1; r < height - 1; r++) {
++      for (int c = 1; c < width - 1; c++, counter++) {
++        // Horizontal edge
++        horizontal_edge = (double)(( 1) * line_up[c-1] + ( 2) * line_up[c] + ( 1) * line_up[c+1] +
++                                   (-1) * line_dw[c-1] + (-2) * line_dw[c] + (-1) * line_dw[c+1]);
++        horizontal_edge /= 8.0;
++
++        // Vertical edge
++        vertical_edge   = (double)((1) * line_up[c-1] + (-1) * line_up[c+1] +
++                                   (2) * line_cu[c-1] + (-2) * line_cu[c+1] +
++                                   (1) * line_dw[c-1] + (-1) * line_dw[c+1]);
++        vertical_edge  /= 8.0;
++
++        current_grad_mag = sqrt(horizontal_edge*horizontal_edge + vertical_edge*vertical_edge);
++        sum_grad_mag    += current_grad_mag;
++        sum2_grad_mag   += current_grad_mag * current_grad_mag;
++      }
++      line_up += stride;
++      line_cu += stride;
++      line_dw += stride;
++    }
++
++    // Compute the standard deviation of all gradients
++    sum2_grad_mag /= (double)counter;
++    sum_grad_mag  /= (double)counter;
++    current_si = sqrt(sum2_grad_mag - sum_grad_mag*sum_grad_mag);
++
++    return current_si;
++}
++
++static double compute_si_16bit(const uint8_t *y_buff, const int height, const int width, int stride)
++{
++    const uint16_t *line_up, *line_cu, *line_dw;
++    double horizontal_edge, vertical_edge, current_grad_mag, current_si;
++    double sum2_grad_mag = 0.0, sum_grad_mag = 0.0;
++    int counter = 0;
++    stride /= sizeof(uint16_t);
++
++    line_up = (const uint16_t*)y_buff;
++    line_cu = (const uint16_t*)y_buff + stride;
++    line_dw = (const uint16_t*)y_buff + (stride << 1);
++
++    for (int r = 1; r < height - 1; r++) {
++      for (int c = 1; c < width - 1; c++, counter++) {
++        // Horizontal edge
++        horizontal_edge = (double)(( 1) * line_up[c-1] + ( 2) * line_up[c] + ( 1) * line_up[c+1] +
++                                   (-1) * line_dw[c-1] + (-2) * line_dw[c] + (-1) * line_dw[c+1]);
++        horizontal_edge /= 8.0;
++
++        // Vertical edge
++        vertical_edge   = (double)((1) * line_up[c-1] + (-1) * line_up[c+1] +
++                                   (2) * line_cu[c-1] + (-2) * line_cu[c+1] +
++                                   (1) * line_dw[c-1] + (-1) * line_dw[c+1]);
++        vertical_edge  /= 8.0;
++
++        current_grad_mag = sqrt(horizontal_edge*horizontal_edge + vertical_edge*vertical_edge);
++        sum_grad_mag    += current_grad_mag;
++        sum2_grad_mag   += current_grad_mag * current_grad_mag;
++      }
++      line_up += stride;
++      line_cu += stride;
++      line_dw += stride;
++    }
++
++    // Compute the standard deviation of all gradients
++    sum2_grad_mag /= (double)counter;
++    sum_grad_mag  /= (double)counter;
++    current_si = sqrt(sum2_grad_mag - sum_grad_mag*sum_grad_mag);
++
++    return current_si;
++}
++
++static double compute_ti_8bit(const uint8_t *curr, const uint8_t *prev, const int height, const int width, int stride)
++{
++    double sum_sq_diff = 0.0, sum_diff = 0.0, difference, ti;
++
++    for (int r = 0; r < height; r++) {
++      for (int c = 0; c < width; c++) {
++        difference = (double)(curr[c] - prev[c]);
++        sum_sq_diff += difference * difference;
++        sum_diff    += difference;
++      }
++      prev += stride;
++      curr += stride;
++    }
++
++    sum_sq_diff /= (double)(height * width);
++    sum_diff    /= (double)(height * width);
++    ti = sqrt(sum_sq_diff - sum_diff*sum_diff);
++
++    return ti;
++}
++
++static double compute_ti_16bit(const uint8_t *curr, const uint8_t *prev, const int height, const int width, int stride)
++{
++    double sum_sq_diff = 0.0, sum_diff = 0.0, difference, ti;
++    const uint16_t *prev16 = (const uint16_t*)prev;
++    const uint16_t *curr16 = (const uint16_t*)curr;
++    stride /= sizeof(uint16_t);
++
++    for (int r = 0; r < height; r++) {
++      for (int c = 0; c < width; c++) {
++        difference = (double)(curr16[c] - prev16[c]);
++        sum_sq_diff += difference * difference;
++        sum_diff    += difference;
++      }
++      prev16 += stride;
++      curr16 += stride;
++    }
++
++    sum_sq_diff /= (double)(height * width);
++    sum_diff    /= (double)(height * width);
++    ti = sqrt(sum_sq_diff - sum_diff*sum_diff);
++
++    return ti;
++}
++
++static av_cold int init(AVFilterContext *ctx)
++{
++    SpatioTemporalInfoContext *sti = ctx->priv;
++
++    sti->si = -1.0;
++    sti->ti = -1.0;
++    sti->frame_cnt = 0;
++    sti->header_written = 0;
++    sti->prev_y = NULL;
++
++    if (sti->stats_file_name) {
++        if (!strcmp(sti->stats_file_name, "-")) {
++            sti->stats_file = stdout;
++        } else {
++            sti->stats_file = fopen(sti->stats_file_name, "w");
++            if (!sti->stats_file) {
++                int err = AVERROR(errno);
++                char buf[128];
++                av_strerror(err, buf, sizeof(buf));
++                av_log(ctx, AV_LOG_ERROR, "Could not open stats file %s: %s\n", sti->stats_file_name, buf);
++                return err;
++            }
++        }
++    }
++
++    return 0;
++}
++
++static int query_formats(AVFilterContext *ctx)
++{
++    static const enum AVPixelFormat pix_fmts[] = {
++        AV_PIX_FMT_GRAY8, AV_PIX_FMT_GRAY10, AV_PIX_FMT_GRAY12, AV_PIX_FMT_GRAY14, AV_PIX_FMT_GRAY16,
++#define PF(suf) AV_PIX_FMT_YUV420##suf,  AV_PIX_FMT_YUV422##suf,  AV_PIX_FMT_YUV444##suf
++        PF(P), PF(P10), PF(P12), PF(P16),
++        AV_PIX_FMT_NONE
++        };
++
++    AVFilterFormats *fmts_list;
++
++    fmts_list = ff_make_format_list(pix_fmts);
++    if (!fmts_list)
++        return AVERROR(ENOMEM);
++    return ff_set_common_formats(ctx, fmts_list);
++}
++
++static int config_props(AVFilterLink *inlink)
++{
++    int is_8bpp;
++    const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(inlink->format);
++    AVFilterContext *ctx  = inlink->dst;
++    SpatioTemporalInfoContext *sti = ctx->priv;
++
++    is_8bpp = desc->comp[0].depth == 8;
++    sti->compute_si = is_8bpp ? compute_si_8bit : compute_si_16bit;
++    sti->compute_ti = is_8bpp ? compute_ti_8bit : compute_ti_16bit;
++
++    return 0;
++}
++
++static int filter_frame(AVFilterLink *inlink, AVFrame *in)
++{
++    AVFilterContext *ctx = inlink->dst;
++    SpatioTemporalInfoContext *sti = ctx->priv;
++    double si, ti = 0.0;
++    size_t data_sz;
++
++    si = sti->compute_si(in->data[0], in->height, in->width, in->linesize[0]);
++
++    sti->si = FFMAX(sti->si, si);
++
++    if (!sti->prev_y) {
++        data_sz = (size_t)in->height * in->linesize[0];
++        if (!(sti->prev_y = av_malloc(data_sz))) {
++            return AVERROR(ENOMEM);
++        }
++    }
++
++
++    if (sti->frame_cnt > 0) {
++        ti = sti->compute_ti(in->data[0], sti->prev_y, in->height, in->width, in->linesize[0]);
++        sti->ti = FFMAX(sti->ti, ti);
++    }
++
++    if (sti->stats_file) {
++        if (!sti->header_written) {
++            fprintf(sti->stats_file, "Frame nr.,SI,TI\n");
++            sti->header_written = 1;
++        }
++        fprintf(sti->stats_file, "%"PRId64",%0.2f,%0.2f\n", sti->frame_cnt, si, ti);
++    }
++
++    memcpy(sti->prev_y, in->data[0], (size_t)in->height * in->linesize[0]);
++
++    sti->frame_cnt++;
++
++    return ff_filter_frame(ctx->outputs[0], in);
++}
++
++static av_cold void uninit(AVFilterContext *ctx)
++{
++    SpatioTemporalInfoContext *sti = ctx->priv;
++
++    fprintf(sti->stats_file, "Total,%0.2f,%0.2f\n", sti->si, sti->ti);
++    if (sti->stats_file && sti->stats_file != stdout) {
++        fclose(sti->stats_file);
++    }
++
++    if (sti->prev_y) {
++        av_free(sti->prev_y);
++    }
++
++}
++
++static const AVFilterPad spatiotemporalinfo_inputs[] = {
++    {
++        .name         = "default",
++        .type         = AVMEDIA_TYPE_VIDEO,
++        .config_props = config_props,
++        .filter_frame = filter_frame,
++    },
++    { NULL }
++};
++
++static const AVFilterPad spatiotemporalinfo_outputs[] = {
++    {
++        .name = "default",
++        .type = AVMEDIA_TYPE_VIDEO,
++    },
++    { NULL }
++};
++
++AVFilter ff_vf_spatiotemporalinfo = {
++    .name          = "spatiotemporalinfo",
++    .description   = NULL_IF_CONFIG_SMALL("Compute the ITU-T P.910 spatial and temporal information."),
++    .priv_size     = sizeof(SpatioTemporalInfoContext),
++    .init          = init,
++    .uninit        = uninit,
++    .query_formats = query_formats,
++    .inputs        = spatiotemporalinfo_inputs,
++    .outputs       = spatiotemporalinfo_outputs,
++    .priv_class    = &spatiotemporalinfo_class,
++    .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC,
++};
+-- 
+2.17.1
+

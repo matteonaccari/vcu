@@ -1,0 +1,13 @@
+#	Parameters file for the transmission simulation of a H.264/AVC bitsream over an IP network
+#	Everything after the # will be ignored
+#	
+#	Matteo Naccari (matteo.naccari@gmail.com | matteo.naccari@polimi.it | matteo.naccari@lx.it.pt)
+#
+
+
+container.264
+container_err.264
+error_plr_3
+1               #packet type: 0 = RTP, 1 = AnnexB
+0               #offset, i.e. the initial point to read loss pattern file 
+0		#modality of corruption: 0 normal corruption, 1 corrupts all slice but intra ones, 2 corrupts only intra slices
