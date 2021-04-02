@@ -59,10 +59,11 @@ Output parameters:
                          around an image pixel.
 '''
 
-import numpy as np
-from nptyping import NDArray
 from typing import Any, Tuple
+
+import numpy as np
 from blurmetric import blurmetric
+from nptyping import NDArray
 
 
 def ringingmetric(Y_ori: NDArray[(Any, Any), np.int32], Y_ring: NDArray[(Any, Any), np.int32]) -> Tuple[float, float, NDArray[(Any), np.float64], NDArray[(Any, Any, 2), np.int32]]:

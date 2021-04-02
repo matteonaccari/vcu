@@ -74,9 +74,11 @@ Parameters:
         clipping is performed accordingly.
 '''
 
+from typing import Any
+
 import numpy as np
 from nptyping import NDArray
-from typing import Any
+
 
 def h264qpel(Y: NDArray[(Any, Any), np.int32]) -> NDArray[(Any, Any), np.int32]:
     PAD_FACTOR = 4

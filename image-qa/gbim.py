@@ -49,9 +49,10 @@ Output parameters:
     - MGBIM            = Image level metric value
 '''
 
+from typing import Any
+
 import numpy as np
 from nptyping import NDArray
-from typing import Any
 
 
 def gbim(image: NDArray[(Any, Any), np.int32], B: int) -> float:

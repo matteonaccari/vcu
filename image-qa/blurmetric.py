@@ -54,11 +54,12 @@ Output parameters:
                          edge width
 '''
 
-import numpy as np
-from nptyping import NDArray
-from typing import Any, Tuple
 import os
 import sys
+from typing import Any, Tuple
+
+import numpy as np
+from nptyping import NDArray
 
 
 def blurmetric(Y_ori: NDArray[(Any, Any), np.int32], Y_blur: NDArray[(Any, Any), np.int32]) -> Tuple[float, NDArray[(Any), np.float64], NDArray[(Any, Any, 2), np.int32]]:

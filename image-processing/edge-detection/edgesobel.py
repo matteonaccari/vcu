@@ -49,10 +49,11 @@ Parameters:
                     associated with an image edge.
 '''
 
-import numpy as np
-from nptyping import NDArray, Bool
 from typing import Any
+
+import numpy as np
 import scipy.signal as dsp
+from nptyping import Bool, NDArray
 
 
 def edgesobel(image: NDArray[(Any, Any), np.int32], direction: str = 'both') -> NDArray[(Any, Any), Bool]:
