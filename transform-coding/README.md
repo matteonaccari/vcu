@@ -1,0 +1,2 @@
+# Trasform coding utilities
+The software under this section provides you with the calculation of the Discrete Cosine Transform (DCT), including a specific integer approximation specified in the H.264/AVC standard. Additionally, you also have a script to upsample a given image to the quarter pixel resolution as specified by the H.264/AVC standard, this may be useful is you want to analyse the prediction residuals associated with motion compensation in the H.264/AVC standard without the need to hack the reference implmentation (i.e. JM).

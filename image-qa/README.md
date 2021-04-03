@@ -1,0 +1,2 @@
+# Image quality assessment via objective metrics
+Here is a collection of utilities to quantfy the impact of artefacts such as blurring, ringing and blocking to the final image quality. The metrics provided here are from the state-of-the-art, see the help of each script for more information.

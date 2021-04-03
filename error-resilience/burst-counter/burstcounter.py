@@ -31,7 +31,7 @@ CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
 THE POSSIBILITY OF SUCH DAMAGE.
 
-The burstcounter software returns the information associated with the burst of 
+The burstcounter software returns the information associated with the burst of
 transmission errors contained in the pattern file specified as input
 
 Parameters:
@@ -76,4 +76,3 @@ def burstcounter(pattern_file: str) -> List[List[int]]:
 
     print(f"Average burst length: {total_length / burst_c:.2f}")
     return burst_info
-

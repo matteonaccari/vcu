@@ -104,7 +104,7 @@ def h264qpel(Y: NDArray[(Any, Any), np.int32]) -> NDArray[(Any, Any), np.int32]:
     Y4[r_end::PAD_FACTOR, c_start:c_end:PAD_FACTOR] = np.tile(Y4[r_end - 4, c_start:c_end:PAD_FACTOR], (PAD_FACTOR, 1))
 
     # 3) Left
-    Y4[r_start:r_end:PAD_FACTOR, :c_start:PAD_FACTOR] = np.tile(Y4[r_start:r_end:PAD_FACTOR, c_start:c_start+1], (1, PAD_FACTOR))
+    Y4[r_start:r_end:PAD_FACTOR, :c_start:PAD_FACTOR] = np.tile(Y4[r_start:r_end:PAD_FACTOR, c_start:c_start + 1], (1, PAD_FACTOR))
 
     # 4) Right
     Y4[r_start:r_end:PAD_FACTOR, c_end::PAD_FACTOR] = np.tile(Y4[r_start:r_end:PAD_FACTOR, c_end - 4:c_end - 3], (1, PAD_FACTOR))
@@ -179,14 +179,12 @@ def h264qpel(Y: NDArray[(Any, Any), np.int32]) -> NDArray[(Any, Any), np.int32]:
     # Pixels starting from row 4 (r)
     Y4[3:-1:PAD_FACTOR, 3:-1:PAD_FACTOR] = (Y4[4::PAD_FACTOR, 2:-2:PAD_FACTOR] + Y4[2:-2:PAD_FACTOR, 4::PAD_FACTOR] + 1) >> 1
 
-
     # Quarter pixels interpolated as \
     # Pixels starting from row 2 (g)
     Y4[1:-1:PAD_FACTOR, 3:-1:PAD_FACTOR] = (Y4[::PAD_FACTOR, 2:-2:PAD_FACTOR] + Y4[2::PAD_FACTOR, 4::PAD_FACTOR] + 1) >> 1
 
     # Pixels starting from row 4 (p)
     Y4[3:-1:PAD_FACTOR, 1:-1:PAD_FACTOR] = (Y4[2:-2:PAD_FACTOR, ::PAD_FACTOR] + Y4[4::PAD_FACTOR, 2::PAD_FACTOR] + 1) >> 1
-
 
     # Bottom row and rightmost column
     i = np.where(Y4[-1, 0:-1] == 0)

@@ -1,0 +1,5 @@
+# Tools for basic image processing
+Here you have some tools which might become useful to your experiments. The utilities provided are for the following tasks:
+ * **Edge detection**: A simple detector using the Sobel operator coupled with a thinning algorithm which can be used in the blurring and ringing objective quality metrics (see [here](../image-qa/README.md) for more details).
+ * **Ringing artefact injection**: Adds a synthetic ringing pattern to a given image, as specified in the ITU-T Recommendation P.930. This artefact injection may become useful when assessing a given objective metrics devoted to quantify the impact of ringing artefacts.
+ * **Classification of test content**: If you need to understand whether your test material spans a reasonable range of spatial and temporal features, the utilities provided here are the right tool for the job. They implement the calculation of the spatial and temporal information as specified by the ITU-T P910 recommendation. See the [readme](./spatio-temporal-index/README.md) file for more information.

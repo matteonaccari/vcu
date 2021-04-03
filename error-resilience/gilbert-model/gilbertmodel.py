@@ -76,7 +76,7 @@ from numpy.random import rand
 def gilbertmodel(plr: float, bl: int) -> List[int]:
     b = 1 - 1 / bl
     p = plr / 100
-    g = 1 - ((1-b)/(1-p))*p
+    g = 1 - ((1 - b) / (1 - p)) * p
 
     N = 10000
 
@@ -102,10 +102,9 @@ def gilbertmodel(plr: float, bl: int) -> List[int]:
     # Print out the actual statistics
     idx_1 = np.where(pattern == 1)[0]
     L = np.mean(burst)
-    aplr = len(idx_1) / N  * 100
+    aplr = len(idx_1) / N * 100
 
     print(f"True mean PLR [%]: {aplr:.2f}")
     print(f"True burst length [packets]: {L:.2f}")
 
     return pattern
-
