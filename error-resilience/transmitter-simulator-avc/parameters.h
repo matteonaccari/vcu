@@ -37,44 +37,44 @@
 #ifndef H_PARAMETERS_
 #define H_PARAMETERS_
 
-#include <stdio.h>
-#include <iostream>
-#include <fstream>
 #include <string>
 
 using namespace std;
 
 /*!
  *
- *	\brief
- *	It models the parameters related to the transmission conditions
+ * \brief
+ * Models the parameters related to the transmission conditions
  *
- *	\author
- *	Matteo Naccari
+ * \author
+ * Matteo Naccari
  *
 */
 
-class Parameters {
+class Parameters
+{
+
 private:
-  string bitstream_original, bitstream_transmitted, loss_pattern_file;
-  int modality, offset, packet_type;
-  bool valid_line(string line);
+  string m_bitstream_original, m_bitstream_transmitted, m_loss_pattern_file;
+  int m_modality, m_offset, m_packet_type;
+  bool valid_line(const string& line);
+  void check_parameters();
+
 public:
-  //! First constructor: the parameters are passed through command line
+  //! First constructor: parameters are passed through command line
   Parameters(char** argv);
 
-  //! Second constructor: the parameters are passed through configuration file
+  //! Second constructor: parameters are passed through configuration file
   Parameters(char* argv);
 
-  ~Parameters();
+  ~Parameters() {};
 
-  string get_bitstream_original_filename() { return bitstream_original; }
-  string get_bitstream_transmitted_filename() { return bitstream_transmitted; }
-  string get_loss_pattern_filename() { return loss_pattern_file; }
-  int get_modality() { return modality; }
-  int get_offset() { return offset; }
-  int get_packet_type() { return packet_type; }
-  void check_parameters();
+  const string& get_bitstream_original_filename() const { return m_bitstream_original; }
+  const string& get_bitstream_transmitted_filename() const { return m_bitstream_transmitted; }
+  const string& get_loss_pattern_filename() const { return m_loss_pattern_file; }
+  int get_modality() const { return m_modality; }
+  int get_offset() const { return m_offset; }
+  int get_packet_type() const { return m_packet_type; }
 };
 
 #endif

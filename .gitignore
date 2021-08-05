@@ -1,5 +1,6 @@
 .vscode/
 .vs/
+bin/
 *.user
 *.docx
 __pycache__/

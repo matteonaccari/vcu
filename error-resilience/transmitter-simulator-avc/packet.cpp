@@ -35,80 +35,51 @@
  *
 */
 #include "packet.h"
-#include <cstring>
+#include <string>
+#include <iomanip>
 
 //////////////////////////////////////////////////////////////////////////////////////////
-//								Packet member functions
+//        Packet member functions
 /////////////////////////////////////////////////////////////////////////////////////////
+
 /*!
  *
- *	\brief
- *	It frees the memory space for a given NALU
+ * \brief
+ * Allocates the memory space for a given NALU
  *
- *	\param
- *	n a pointer to the NALU being cancelled
+ * \param
+ * buffersize the maximum dimension for the NALU buffer
  *
- *	\author
- *	Matteo Naccari
+ * \author
+ * Matteo Naccari
  *
 */
-void Packet::FreeNALU(NALU_t* n)
+
+void Packet::alloc_nalu(int buffersize)
 {
-  if (n)
-  {
-    if (n->buf)
-    {
-      free(n->buf);
-      n->buf = NULL;
-    }
-    free(n);
-  }
+  m_nalu.buf.resize(buffersize, 0);
+  m_nalu.max_size = buffersize;
 }
 
 /*!
  *
- *	\brief
- *	It allocates the memory space for a given NALU
+ * \brief
+ * Decodes the slice type for the current NALU (i.e. the current packet).
+ * Following the specification given in: "Information Technology - Coding of
+ * audio-visual objects - Part 10: advanced video coding", the slice header syntax
+ * contains firstly the number of the first macroblock belonging to the current slice
+ * then it follows the slice type.
+ * Both these two syntax elements are retrived by a simple exp-Golomb decoding with
+ * unsigned direct mapping of the informative codeword
  *
- *	\param
- *	buffersize the maximum dimension for the NALU buffer
- *
- *	\author
- *	Matteo Naccari
+ * \author
+ * Matteo Naccari
  *
 */
 
-void Packet::AllocNALU(int buffersize)
+void Packet::decode_slice_type()
 {
-
-  if ((nalu = (NALU_t*)calloc(1, sizeof(NALU_t))) == NULL)
-    cout << "no_mem_exit (AllocNALU: n)" << endl;
-
-  nalu->max_size = buffersize;
-
-  if ((nalu->buf = (byte*)calloc(buffersize, sizeof(byte))) == NULL) cout << "GetAnnexbNALU: Buf" << endl;
-
-}
-
-/*!
- *
- *	\brief
- *	It decodes the slice type for the current NALU (i.e. the current packet).
- *	Following the specification given in: "Information Technology - Coding of
- *	audio-visual objects - Part 10: advanced video coding", the slice header syntax
- *	contains firstly the number of the first macroblock belonging to the current slice
- *	then it follows the slice type.
- *	Both these two syntax elements are retrived by a simple exp-Golomb decoding with
- *	unsigned direct mapping of the informative codeword
- *
- *	\author
- *	Matteo Naccari
- *
-*/
-
-void Packet::decode_slice_type() {
-
-  byte* buffer = &nalu->buf[1];
+  uint8_t* buffer = &m_nalu.buf[1];
   int dummy;
 
   //First syntax element in the slice header: first_mb_in_slice
@@ -117,38 +88,40 @@ void Packet::decode_slice_type() {
   //Second syntax element in the slice header: slice_type
   dummy = exp_golomb_decoding(buffer);
 
-  if (dummy > 4) dummy -= 5;
+  if (dummy > 4) {
+    dummy -= 5;
+  }
 
-  slice_type = (SliceType)dummy;
+  m_slice_type = SliceType(dummy);
 }
 
 /*!
  *
- *	\brief
- *	It performs the Exponential-Golomb decoding with unsigned direct mapping
+ * \brief
+ * It performs the Exponential-Golomb decoding with unsigned direct mapping
  *
- *	\param
- *	buffer a pointer to the memory area which contains the coded data
+ * \param
+ * buffer a pointer to the memory area which contains the coded data
  *
- *	\return the slice type casted to the SliceType enumeration
+ * \return the slice type casted to the SliceType enumeration
 */
 
-int Packet::exp_golomb_decoding(byte* buffer) {
-
+int Packet::exp_golomb_decoding(uint8_t* buffer)
+{
   register int info = 0;
-  long byteoffset = frame_bitoffset >> 3;                 //!	Byte containing the current starting bit
-  int bitoffset = (7 - (frame_bitoffset & 0x07));     //!	Starting bit inside the current byte	
-  int len = 0;                                  //!	Control variable for exp-golomb decoding
-  int M = 0;                                  //!	Number of zeros before the first 1
-  byte* curr_byte = &(buffer[byteoffset]);              //!	Current byte's address
-  int ctr_bit = ((*curr_byte >> bitoffset) & 0x01); //!	Control bit
+  long byteoffset = m_frame_bitoffset >> 3;         //! Byte containing the current starting bit
+  int bitoffset = (7 - (m_frame_bitoffset & 0x07)); //! Starting bit inside the current byte
+  int len = 0;                                      //! Control variable for exp-golomb decoding
+  int M = 0;                                        //! Number of zeros before the first 1
+  uint8_t* curr_byte = &(buffer[byteoffset]);       //! Current byte's address
+  int ctr_bit = ((*curr_byte >> bitoffset) & 0x01); //! Control bit
 
-  frame_bitoffset++;
+  m_frame_bitoffset++;
 
-  //First step of exp-golomb decoding: finding the leading 1	
+  //First step of exp-golomb decoding: finding the leading 1
   while (ctr_bit == 0) {
     len++;
-    frame_bitoffset++;
+    m_frame_bitoffset++;
     bitoffset--;
     bitoffset &= 0x07; //Modulo 8 conversion
     curr_byte += (bitoffset == 7);
@@ -161,7 +134,7 @@ int Packet::exp_golomb_decoding(byte* buffer) {
   //Second step of exp-golomb decoding: read the info part
   while (len) {
     len--;
-    frame_bitoffset++;
+    m_frame_bitoffset++;
     bitoffset--;
     bitoffset &= 0x07;
     curr_byte += (bitoffset == 7);
@@ -173,262 +146,268 @@ int Packet::exp_golomb_decoding(byte* buffer) {
   info = (1 << M) + info - 1;
 
   return info;
-
 }
 /////////////////////////////////////////////////////////////////////////////////////////
 
 /////////////////////////////////////////////////////////////////////////////////////////
-//							RTP_packet member functions
+//       RTP_packet member functions
 /////////////////////////////////////////////////////////////////////////////////////////
+
 /*!
  *
  * \brief
- *    DecomposeRTPpacket interprets the RTP packet and writes the various
- *    structure members of the RTPpacket_t structure
+ * decompose_rtp_packet interprets the RTP packet and writes the various
+ * structure members of the RTPpacket_t structure
  *
  * \return
- *    0 in case of success
- *    negative error code in case of failure
+ * 0 in case of success
+ * negative error code in case of failure
  *
  *
  * \author
- *    Stephan Wenger   stewe@cs.tu-berlin.de
+ * Adapted from the H.264/AVC reference implementation (aka JM)
+ * Original author: Stephan Wenger   stewe@cs.tu-berlin.de
 */
-int Rtp_packet::DecomposeRTPpacket() {
+int RtpPacket::decompose_rtp_packet()
+{
+  // consistency check
+  if (!(m_rtp_data.packlen < MAXRTPPACKETSIZE)) {
+    // IP, UDP headers
+    throw logic_error("Condition: p.packlen < MAXRTPPACKETSIZE, violated");
+  }
 
-  // consistency check 
-  assert(p->packlen < 65536 - 28);  // IP, UDP headers
-  assert(p->packlen >= 12);         // at least a complete RTP header
-  assert(p->payload != NULL);
-  assert(p->packet != NULL);
+  if (!(m_rtp_data.packlen >= 12)) {
+    // at least a complete RTP header
+    throw logic_error("Condition: p.packlen >= 12, violated");
+  }
+
+  if (m_rtp_data.payload.size() == 0) {
+    throw logic_error("p.payload not allocated");
+  }
+
+  if (m_rtp_data.packet.size() == 0) {
+    throw logic_error("p.packet not allocated");
+  }
 
   // Extract header information
+  m_rtp_data.v = (m_rtp_data.packet[0] >> 6) & 0x03;
+  m_rtp_data.p = (m_rtp_data.packet[0] >> 5) & 0x01;
+  m_rtp_data.x = (m_rtp_data.packet[0] >> 4) & 0x01;
+  m_rtp_data.cc = (m_rtp_data.packet[0] >> 0) & 0x0F;
 
-  p->v = (p->packet[0] >> 6) & 0x03;
-  p->p = (p->packet[0] >> 5) & 0x01;
-  p->x = (p->packet[0] >> 4) & 0x01;
-  p->cc = (p->packet[0] >> 0) & 0x0F;
+  m_rtp_data.m = (m_rtp_data.packet[1] >> 7) & 0x01;
+  m_rtp_data.pt = (m_rtp_data.packet[1] >> 0) & 0x7F;
 
-  p->m = (p->packet[1] >> 7) & 0x01;
-  p->pt = (p->packet[1] >> 0) & 0x7F;
+  memcpy(&m_rtp_data.seq, &m_rtp_data.packet[2], 2);
+  m_rtp_data.seq = ntohs((unsigned short)m_rtp_data.seq);
 
-  memcpy(&p->seq, &p->packet[2], 2);
-  p->seq = ntohs((unsigned short)p->seq);
-
-  memcpy(&p->timestamp, &p->packet[4], 4);// change to shifts for unified byte sex
-  p->timestamp = ntohl(p->timestamp);
-  memcpy(&p->ssrc, &p->packet[8], 4);// change to shifts for unified byte sex
-  p->ssrc = ntohl(p->ssrc);
+  memcpy(&m_rtp_data.timestamp, &m_rtp_data.packet[4], 4);// change to shifts for unified byte sex
+  m_rtp_data.timestamp = ntohl(m_rtp_data.timestamp);
+  memcpy(&m_rtp_data.ssrc, &m_rtp_data.packet[8], 4);// change to shifts for unified byte sex
+  m_rtp_data.ssrc = ntohl(m_rtp_data.ssrc);
 
   // header consistency checks
-  if ((p->v != 2)
-    || (p->p != 0)
-    || (p->x != 0)
-    || (p->cc != 0))
-  {
-    cout << "DecomposeRTPpacket, RTP header consistency problem, header follows\n";
-    DumpRTPHeader();
+  if ((m_rtp_data.v != 2) || (m_rtp_data.p != 0) || (m_rtp_data.x != 0) || (m_rtp_data.cc != 0)) {
+    cerr << "DecomposeRTPpacket, RTP header consistency problem, header follows\n";
+    dump_rtp_header();
     return -1;
   }
-  p->paylen = p->packlen - 12;
-  memcpy(p->payload, &p->packet[12], p->paylen);
+  m_rtp_data.paylen = m_rtp_data.packlen - 12;
+  memcpy(&m_rtp_data.payload[0], &m_rtp_data.packet[12], m_rtp_data.paylen);
   return 0;
 }
 
 /*!
  *
  * \brief
- *    RTPReadPacket reads one packet from file
+ * RTPReadPacket reads one packet from file
  *
  * \return
- *    0: EOF
- *    negative: error
- *    positive: size of RTP packet in bytes
+ * 0: EOF
+ * negative: error
+ * positive: size of RTP packet in bytes
  *
  *
  *
  * \author
- *    Stephan Wenger, stewe@cs.tu-berlin.de
+ * Adapted from the H.264/AVC reference implementation (aka JM)
+ * Original author: Stephan Wenger   stewe@cs.tu-berlin.de
 */
 
-int Rtp_packet::RTPReadPacket(FILE* bits) {
+int RtpPacket::rtp_read_packet(ifstream& ifs)
+{
+  uint32_t pos, intime;
 
-  int Filepos, intime;
-
-  assert(p != NULL);
-  assert(p->packet != NULL);
-  assert(p->payload != NULL);
-
-  Filepos = ftell(bits);
-
-  if (4 != fread(&p->packlen, 1, 4, bits))
-  {
-    return 0;
+  if (m_rtp_data.payload.size() == 0) {
+    throw logic_error("p.payload has zero size");
   }
 
-
-  if (4 != fread(&intime, 1, 4, bits))
-  {
-    fseek(bits, Filepos, SEEK_SET);
-    cout << "RTPReadPacket: File corruption, could not read Timestamp, exit\n";
-    exit(-1);
+  if (m_rtp_data.packet.size() == 0) {
+    throw logic_error("p.packed has zero size");
   }
 
-  assert(p->packlen < MAXRTPPACKETSIZE);
+  pos = static_cast<uint32_t>(ifs.tellg());
 
-  if (p->packlen != fread(p->packet, 1, p->packlen, bits))
-  {
-    cout << "RTPReadPacket: File corruption, could not read " << p->packlen << " bytes\n";
-    exit(-1);    // EOF indication
+  ifs.read(reinterpret_cast<char*>(&m_rtp_data.packlen), 4);
+
+  ifs.read(reinterpret_cast<char*>(&intime), 4);
+
+  if (!(m_rtp_data.packlen < MAXRTPPACKETSIZE)) {
+    throw logic_error("Condition: p.packlen < MAXRTPPACKETSIZE, violated");
   }
-  if (DecomposeRTPpacket() < 0)
-  {
+
+  ifs.read(reinterpret_cast<char*>(&m_rtp_data.packet[0]), m_rtp_data.packlen);
+
+  if (decompose_rtp_packet() < 0) {
     // this should never happen, hence exit() is ok.  We probably do not want to attempt
     // to decode a packet that obviously wasn't generated by RTP
     cout << "Errors reported by DecomposePacket(), exit\n";
     exit(-700);
   }
-  assert(p->pt == H26LPAYLOADTYPE);
-  assert(p->ssrc == 0x12345678);
-  return p->packlen;
+
+  if (!(m_rtp_data.pt == H26LPAYLOADTYPE)) {
+    throw logic_error("Condition: p.pt == H26LPAYLOADTYPE, violated");
+  }
+  
+  if (!(m_rtp_data.ssrc == 0x12345678)) {
+    throw logic_error("Condition: p.ssrc == 0x12345678, violated");
+  }
+
+  return m_rtp_data.packlen;
 }
 /*!
  *****************************************************************************
  *
  * \brief
- *    DumpRTPHeader is a debug tool that dumps a human-readable interpretation
- *    of the RTP header
+ * DumpRTPHeader is a debug tool that dumps a human-readable interpretation
+ * of the RTP header
  *
  * \author
- *    Stephan Wenger   stewe@cs.tu-berlin.de
+ * Adapted from the H.264/AVC reference implementation (aka JM)
+ * Original author: Stephan Wenger   stewe@cs.tu-berlin.de
 */
-void Rtp_packet::DumpRTPHeader() {
+void RtpPacket::dump_rtp_header()
+{
   int i;
-  for (i = 0; i < 30; i++)
-    printf("%02x ", p->packet[i]);
-  printf("Version (V): %d\n", p->v);
-  printf("Padding (P): %d\n", p->p);
-  printf("Extension (X): %d\n", p->x);
-  printf("CSRC count (CC): %d\n", p->cc);
-  printf("Marker bit (M): %d\n", p->m);
-  printf("Payload Type (PT): %d\n", p->pt);
-  printf("Sequence Number: %d\n", p->seq);
-  printf("Timestamp: %d\n", p->timestamp);
-  printf("SSRC: %d\n", p->ssrc);
+  for (i = 0; i < 30; i++) {
+    cout << setw(2) << hex << m_rtp_data.packet[i] << dec << endl;
+  }
+
+  cout << "Version (V): " << m_rtp_data.v << endl;
+  cout << "Padding (P): " << m_rtp_data.p << endl;
+  cout << "Extension (X): " <<  m_rtp_data.x << endl;
+  cout << "CSRC count (CC): " <<  m_rtp_data.cc << endl;
+  cout << "Marker bit (M): " <<  m_rtp_data.m << endl;
+  cout << "Payload Type (PT): " <<  m_rtp_data.pt << endl;
+  cout << "Sequence Number: " <<  m_rtp_data.seq << endl;
+  cout << "Timestamp: " << m_rtp_data.timestamp << endl;
+  cout << "SSRC: " << m_rtp_data.ssrc << endl;
 }
 
 /*!
  *
- *	\brief
- *	It reads an RTP packet for the bitstream being transmitted in order to simulate
- *	error prone transmission
+ * \brief
+ * Reads an RTP packet for the bitstream being transmitted in order to simulate
+ * error prone transmission
  *
- *	\author
- *	Matteo Naccari
+ * \author
+ * Matteo Naccari
  *
 */
-int Rtp_packet::getpacket() {
-
+int RtpPacket::get_packet(ifstream& ifs)
+{
   int ret;
 
-  ret = RTPReadPacket(bits);
-  nalu->forbidden_bit = 1;
-  nalu->len = 0;
+  ret = rtp_read_packet(ifs);
+  m_nalu.forbidden_bit = 1;
+  m_nalu.len = 0;
 
-  frame_bitoffset = 0;
+  m_frame_bitoffset = 0;
 
-  if (ret < 0)
+  if (ret < 0) {
     return -1;
-  if (ret == 0)
+  }
+
+  if (ret == 0) {
     return 0;
+  }
 
-  assert(p->paylen < nalu->max_size);
+  if (!(m_rtp_data.paylen < m_nalu.max_size)) {
+    throw logic_error("Condition: p.paylen < m_nalu.max_size, violated");
+  }
 
-  nalu->len = p->paylen;
-  memcpy(nalu->buf, p->payload, p->paylen);
-  nalu->forbidden_bit = (nalu->buf[0] >> 7) & 1;
-  nalu->nal_reference_idc = (nalu->buf[0] >> 5) & 3;
-  nalu->nal_unit_type = (nalu->buf[0]) & 0x1f;
+  m_nalu.len = m_rtp_data.paylen;
+  memcpy(&m_nalu.buf[0], &m_rtp_data.payload[0], m_rtp_data.paylen);
+  m_nalu.forbidden_bit = (m_nalu.buf[0] >> 7) & 1;
+  m_nalu.nal_reference_idc = (m_nalu.buf[0] >> 5) & 3;
+  m_nalu.nal_unit_type = NaluType((m_nalu.buf[0]) & 0x1f);
 
   return ret;
-
 }
 
 /*!
  *
- *	\brief
- *	It allocates the memory space for an RTP packet
+ * \brief
+ * Allocates the memory space for an RTP packet
  *
- *	\author
- *	Matteo Naccari
+ * \author
+ * Matteo Naccari
  *
 */
-void Rtp_packet::allocate_rtp_packet() {
-
-  if ((p = (RTPpacket_t*)malloc(sizeof(RTPpacket_t))) == NULL) {
-    cout << "There is not enought memory for RTP Packet, abort\n" << endl;
-    exit(-1);
-  }
-  if ((p->packet = (byte*)malloc(MAXRTPPACKETSIZE)) == NULL) {
-    cout << "There is not enought memory for RTP Packet, abort\n" << endl;
-    exit(-1);
-  }
-
-  if ((p->payload = (byte*)malloc(MAXRTPPACKETSIZE)) == NULL) {
-    cout << "There is not enought memory for RTP payload, abort\n" << endl;
-    exit(-1);
-  }
-
+void RtpPacket::allocate_rtp_packet()
+{
+  m_rtp_data.packet.resize(MAXRTPPACKETSIZE, 0);
+  m_rtp_data.payload.resize(MAXRTPPACKETSIZE, 0);
 }
 
 /*!
  *
- *	\brief
- *	It writes on the received bitstream (i.e. the output bitstream) an RTP packet
+ * \brief
+ * Writes on the received bitstream (i.e. the output bitstream) an RTP packet
  *
- *	\param
- *	f a pointer to the file associated to the transmitted bitstream
+ * \param
+ * f a pointer to the file associated to the transmitted bitstream
  *
- *	\return
- *	Number of bytes written to output file
+ * \return
+ * Number of bytes written to output file
  *
- *	\author
- *	Matteo Naccari
- *	Stephan Wenger   stewe@cs.tu-berlin.de
+ * \author
+ * Adapted from the H.264/AVC reference implementation (aka JM)
+ * Original author: Stephan Wenger   stewe@cs.tu-berlin.de
  *
 */
-int Rtp_packet::writepacket(FILE* f) {
+int RtpPacket::write_packet(ofstream& ofs)
+{
+  if (!(m_nalu.len < 65000)) {
+    throw logic_error("Condition m_nalu.len < 65000, violated");
+  }
 
-  assert(f != NULL);
-  assert(nalu != NULL);
-  assert(nalu->len < 65000);
+  m_nalu.buf[0] = (byte)(m_nalu.forbidden_bit << 7 | m_nalu.nal_reference_idc << 5 | int(m_nalu.nal_unit_type));
 
-  nalu->buf[0] = (byte)(nalu->forbidden_bit << 7 | nalu->nal_reference_idc << 5 | nalu->nal_unit_type);
-
-  p->v = 2;
-  p->p = 0;
-  p->x = 0;
-  p->cc = 0;
-  p->m = (nalu->startcodeprefix_len == 4) & 1;     // a long startcode of Annex B sets marker bit of RTP
+  m_rtp_data.v = 2;
+  m_rtp_data.p = 0;
+  m_rtp_data.x = 0;
+  m_rtp_data.cc = 0;
+  m_rtp_data.m = (m_nalu.startcodeprefix_len == 4) & 1;     // a long startcode of Annex B sets marker bit of RTP
                       // Not exactly according to the RTP paylaod spec, but
                       // good enough for now (hopefully).
                       //! For error resilience work, we need the correct
                       //! marker bit.  Introduce a nalu->marker and set it in
                       //! terminate_slice()?
-  p->pt = H264PAYLOADTYPE;
-  p->seq = CurrentRTPSequenceNumber++;
-  p->timestamp = CurrentRTPTimestamp;
-  p->ssrc = H264SSRC;
-  p->paylen = nalu->len;
-  memcpy(p->payload, nalu->buf, nalu->len);
+  m_rtp_data.pt = H264PAYLOADTYPE;
+  m_rtp_data.seq = current_rtp_sequence_number++;
+  m_rtp_data.timestamp = current_rtp_time_stamp;
+  m_rtp_data.ssrc = H264SSRC;
+  m_rtp_data.paylen = m_nalu.len;
+  memcpy(&m_rtp_data.payload[0], &m_nalu.buf[0], m_nalu.len);
 
-  if (WriteRTPPacket(f) < 0)
+  if (write_rtp_packet(ofs) < 0)
   {
-    printf("Cannot write %d bytes of RTP packet to outfile, exit\n", p->packlen);
+    printf("Cannot write %d bytes of RTP packet to outfile, exit\n", m_rtp_data.packlen);
     exit(-1);
   }
 
-  return (nalu->len * 8);
+  return (m_nalu.len * 8);
 }
 
 /*!
@@ -445,33 +424,20 @@ int Rtp_packet::writepacket(FILE* f) {
  *    output file
  *
  * \author
- *    Stephan Wenger   stewe@cs.tu-berlin.de
+ * Adapted from the H.264/AVC reference implementation (aka JM)
+ * Original author: Stephan Wenger   stewe@cs.tu-berlin.de
+ *
  *****************************************************************************/
 
-int Rtp_packet::WriteRTPPacket(FILE* f)
-
+int RtpPacket::write_rtp_packet(ofstream& ofs)
 {
   int intime = -1;
 
-  assert(f != NULL);
-  assert(p != NULL);
+  ofs.write(reinterpret_cast<char*>(&m_rtp_data.packlen), 4);
+  ofs.write(reinterpret_cast<char*>(&intime), 4);
+  ofs.write(reinterpret_cast<char*>(&m_rtp_data.packet[0]), m_rtp_data.packlen);
 
-
-  if (1 != fwrite(&p->packlen, 4, 1, f))
-    return -1;
-  if (1 != fwrite(&intime, 4, 1, f))
-    return -1;
-  if (1 != fwrite(p->packet, p->packlen, 1, f))
-    return -1;
   return 0;
-}
-
-Rtp_packet::~Rtp_packet() {
-
-  free(p->payload);
-  free(p->packet);
-  free(p);
-
 }
 
 /*!
@@ -485,65 +451,43 @@ Rtp_packet::~Rtp_packet() {
  *    0 in case of success
  *    negative error code in case of failure
  *
- * \note
- *    Function contains assert() tests for debug purposes (consistency checks
- *    for RTP header fields
  *
  * \author
- *    Stephan Wenger   stewe@cs.tu-berlin.de
+ * Adapted from the H.264/AVC reference implementation (aka JM)
+ * Original author: Stephan Wenger   stewe@cs.tu-berlin.de
+ *
  *****************************************************************************/
 
-int Rtp_packet::ComposeRTPPacket()
-
+int RtpPacket::compose_rtp_packet()
 {
   unsigned int temp32;
   unsigned short temp16;
 
-  // Consistency checks through assert, only used for debug purposes
-  assert(p->v == 2);
-  assert(p->p == 0);
-  assert(p->x == 0);
-  assert(p->cc == 0);    // mixer designers need to change this one
-  assert(p->m == 0 || p->m == 1);
-  assert(p->pt < 128);
-  assert(p->seq < 65536);
-  assert(p->payload != NULL);
-  assert(p->paylen < 65536 - 40);  // 2**16 -40 for IP/UDP/RTP header
-  assert(p->packet != NULL);
-
   // Compose RTP header, little endian
 
-  p->packet[0] = (byte)
-    (((p->v & 0x03) << 6)
-      | ((p->p & 0x01) << 5)
-      | ((p->x & 0x01) << 4)
-      | ((p->cc & 0x0F) << 0));
-
-  p->packet[1] = (byte)
-    (((p->m & 0x01) << 7)
-      | ((p->pt & 0x7F) << 0));
+  m_rtp_data.packet[0] = (uint8_t)(((m_rtp_data.v & 0x03) << 6) | ((m_rtp_data.p & 0x01) << 5) | ((m_rtp_data.x & 0x01) << 4) | ((m_rtp_data.cc & 0x0F) << 0));
+  m_rtp_data.packet[1] = (uint8_t)(((m_rtp_data.m & 0x01) << 7) | ((m_rtp_data.pt & 0x7F) << 0));
 
   // sequence number, msb first
-  temp16 = htons((unsigned short)p->seq);
-  memcpy(&p->packet[2], &temp16, 2);  // change to shifts for unified byte sex
+  temp16 = htons((unsigned short)m_rtp_data.seq);
+  memcpy(&m_rtp_data.packet[2], &temp16, 2);  // change to shifts for unified byte sex
 
   //declare a temporary variable to perform network byte order converson
-  temp32 = htonl(p->timestamp);
-  memcpy(&p->packet[4], &temp32, 4);  // change to shifts for unified byte sex
+  temp32 = htonl(m_rtp_data.timestamp);
+  memcpy(&m_rtp_data.packet[4], &temp32, 4);  // change to shifts for unified byte sex
 
-  temp32 = htonl(p->ssrc);
-  memcpy(&p->packet[8], &temp32, 4);// change to shifts for unified byte sex
+  temp32 = htonl(m_rtp_data.ssrc);
+  memcpy(&m_rtp_data.packet[8], &temp32, 4);// change to shifts for unified byte sex
 
   // Copy payload
-
-  memcpy(&p->packet[12], p->payload, p->paylen);
-  p->packlen = p->paylen + 12;
+  memcpy(&m_rtp_data.packet[12], &m_rtp_data.payload[0], m_rtp_data.paylen);
+  m_rtp_data.packlen = m_rtp_data.paylen + 12;
   return 0;
 }
 /////////////////////////////////////////////////////////////////////////////////////////
 
 /////////////////////////////////////////////////////////////////////////////////////////
-//							AnnexB_packet member functions
+//       AnnexB_packet member functions
 /////////////////////////////////////////////////////////////////////////////////////////
 
 /*!
@@ -562,141 +506,119 @@ int Rtp_packet::ComposeRTPPacket()
  * \note
  *   GetAnnexbNALU expects start codes at byte aligned positions in the file
  *
- *	\author
- *	Matteo Naccari (adapted from the H.264/AVC decoder reference software)
+ * \author
+ * Matteo Naccari (adapted from the H.264/AVC decoder reference software)
  */
 
-int AnnexB_packet::getpacket() {
-  int info2, info3, pos = 0;
-  int StartCodeFound, rewind;
-  unsigned char* Buf;
-  int LeadingZero8BitsCount = 0, TrailingZero8Bits = 0;
+int AnnexBPacket::get_packet(ifstream& ifs)
+{
+  int info2, info3;
+  uint32_t pos = 0;
+  int start_code_found, rewind;
+  vector<unsigned char> buf(m_nalu.max_size, 0);
+  int leading_zero_8bits_count = 0, trailing_zero_8bits = 0;
+  m_frame_bitoffset = 0;
 
-  if ((Buf = (unsigned char*)calloc(nalu->max_size, sizeof(char))) == NULL)
-    cout << "GetAnnexbNALU: Buf" << endl;
-
-  frame_bitoffset = 0;
-
-  while (!feof(bits) && (Buf[pos++] = fgetc(bits)) == 0);
-
-  if (feof(bits))
-  {
-    if (pos == 0)
-      return 0;
-    else
-    {
-      printf("GetAnnexbNALU can't read start code\n");
-      free(Buf);
-      return -1;
+  for (pos = 0; pos < m_nalu.max_size; pos++) {
+    ifs.read(reinterpret_cast<char*>(&buf[pos]), 1);
+    if (ifs.eof() || buf[pos] != 0) {
+      pos++;
+      break;
     }
   }
 
-  if (Buf[pos - 1] != 1)
-  {
-    printf("GetAnnexbNALU: no Start Code at the begin of the NALU, return -1\n");
-    free(Buf);
-    return -1;
+  if (ifs.eof()) {
+    if (pos == 0) {
+      return 0;
+    } else {
+      throw logic_error("getpacket: can't read start code");
+    }
   }
 
-  if (pos < 3)
-  {
-    printf("GetAnnexbNALU: no Start Code at the begin of the NALU, return -1\n");
-    free(Buf);
-    return -1;
-  }
-  else if (pos == 3)
-  {
-    nalu->startcodeprefix_len = 3;
-    LeadingZero8BitsCount = 0;
-  }
-  else
-  {
-    LeadingZero8BitsCount = pos - 4;
-    nalu->startcodeprefix_len = 4;
+  if (buf[pos - 1] != 1) {
+    throw logic_error("getpacket: no Start Code at the begin of the NALU, return -1");
   }
 
-  //the 1st byte stream NAL unit can has leading_zero_8bits, but subsequent ones are not
-  //allowed to contain it since these zeros(if any) are considered trailing_zero_8bits
-  //of the previous byte stream NAL unit.
-  if (!IsFirstByteStreamNALU && LeadingZero8BitsCount > 0)
-  {
-    printf("GetAnnexbNALU: The leading_zero_8bits syntax can only be present in the first byte stream NAL unit, return -1\n");
-    free(Buf);
-    return -1;
+  if (pos < 3) {
+    throw logic_error("getpacket: no Start Code at the begin of the NALU, return -1");
+  } else if (pos == 3) {
+    m_nalu.startcodeprefix_len = 3;
+    leading_zero_8bits_count = 0;
+  } else {
+    leading_zero_8bits_count = pos - 4;
+    m_nalu.startcodeprefix_len = 4;
   }
-  IsFirstByteStreamNALU = 0;
 
-  StartCodeFound = 0;
+  // the 1st byte stream NAL unit can has leading_zero_8bits, but subsequent ones are not
+  // allowed to contain it since these zeros(if any) are considered trailing_zero_8bits
+  // of the previous byte stream NAL unit.
+  if (!m_is_first_byte_stream_nalu && leading_zero_8bits_count > 0) {
+    throw logic_error("getpacket: The leading_zero_8bits syntax can only be present in the first byte stream NAL unit, return -1");
+  }
+  m_is_first_byte_stream_nalu = 0;
+
+  start_code_found = 0;
   info2 = 0;
   info3 = 0;
 
-  while (!StartCodeFound)
-  {
-    if (feof(bits))
-    {
+  while (!start_code_found) {
+    if (ifs.eof()) {
       //Count the trailing_zero_8bits
-      while (Buf[pos - 2 - TrailingZero8Bits] == 0)
-        TrailingZero8Bits++;
-      nalu->len = (pos - 1) - nalu->startcodeprefix_len - LeadingZero8BitsCount - TrailingZero8Bits;
-      memcpy(nalu->buf, &Buf[LeadingZero8BitsCount + nalu->startcodeprefix_len], nalu->len);
-      nalu->forbidden_bit = (nalu->buf[0] >> 7) & 1;
-      nalu->nal_reference_idc = (nalu->buf[0] >> 5) & 3;
-      nalu->nal_unit_type = (nalu->buf[0]) & 0x1f;
+      while (buf[pos - 2 - trailing_zero_8bits] == 0) {
+        trailing_zero_8bits++;
+      }
+      m_nalu.len = (pos - 1) - m_nalu.startcodeprefix_len - leading_zero_8bits_count - trailing_zero_8bits;
+      memcpy(&m_nalu.buf[0], &buf[leading_zero_8bits_count + m_nalu.startcodeprefix_len], m_nalu.len);
+      m_nalu.forbidden_bit = (m_nalu.buf[0] >> 7) & 1;
+      m_nalu.nal_reference_idc = (m_nalu.buf[0] >> 5) & 3;
+      m_nalu.nal_unit_type = NaluType(m_nalu.buf[0] & 0x1f);
 
-      free(Buf);
       return pos - 1;
     }
-    Buf[pos++] = fgetc(bits);
-    info3 = FindStartCode(&Buf[pos - 4], 3);
-    if (info3 != 1)
-      info2 = FindStartCode(&Buf[pos - 3], 2);
-    StartCodeFound = (info2 == 1 || info3 == 1);
+    ifs.read(reinterpret_cast<char*>(&buf[pos++]), 1);
+    info3 = find_start_code(&buf[pos - 4], 3);
+    if (info3 != 1) {
+      info2 = find_start_code(&buf[pos - 3], 2);
+    }
+    start_code_found = (info2 == 1 || info3 == 1);
   }
 
   //Count the trailing_zero_8bits
-  if (info3 == 1)	//if the detected start code is 00 00 01, trailing_zero_8bits is sure not to be present
-  {
-    while (Buf[pos - 5 - TrailingZero8Bits] == 0)
-      TrailingZero8Bits++;
+  if (info3 == 1) {	//if the detected start code is 00 00 01, trailing_zero_8bits is sure not to be present
+    while (buf[pos - 5 - trailing_zero_8bits] == 0) {
+      trailing_zero_8bits++;
+    }
   }
   // Here, we have found another start code (and read length of startcode bytes more than we should
   // have.  Hence, go back in the file
   rewind = 0;
-  if (info3 == 1)
+  if (info3 == 1) {
     rewind = -4;
-  else if (info2 == 1)
+  } else if (info2 == 1) {
     rewind = -3;
-  else
-    printf(" Panic: Error in next start code search \n");
-
-  if (0 != fseek(bits, rewind, SEEK_CUR))
-  {
-    printf("GetAnnexbNALU: Cannot fseek %d in the bit stream file", rewind);
-    free(Buf);
-    return -1;
+  } else {
+    // Should this be a game stopper?
+    cerr << " Panic: Error in next start code search \n";
   }
 
-  // Here the leading zeros(if any), Start code, the complete NALU, trailing zeros(if any)
-  // and the next start code is in the Buf.
-  // The size of Buf is pos, pos+rewind are the number of bytes excluding the next
-  // start code, and (pos+rewind)-startcodeprefix_len-LeadingZero8BitsCount-TrailingZero8Bits
-  // is the size of the NALU.
+  ifs.seekg(rewind, ios::cur);
+  if (ifs.fail() || ifs.bad()) {
+    throw logic_error("Something went wrong when moving the file pointer by " + to_string(rewind) + " bytes in the bitstream file");
+  }
 
-  nalu->len = (pos + rewind) - nalu->startcodeprefix_len - LeadingZero8BitsCount - TrailingZero8Bits;
-  memcpy(nalu->buf, &Buf[LeadingZero8BitsCount + nalu->startcodeprefix_len], nalu->len);
-  nalu->forbidden_bit = (nalu->buf[0] >> 7) & 1;
-  nalu->nal_reference_idc = (nalu->buf[0] >> 5) & 3;
-  nalu->nal_unit_type = (nalu->buf[0]) & 0x1f;
-
-  free(Buf);
+  m_nalu.len = (pos + rewind) - m_nalu.startcodeprefix_len - leading_zero_8bits_count - trailing_zero_8bits;
+  memcpy(&m_nalu.buf[0], &buf[leading_zero_8bits_count + m_nalu.startcodeprefix_len], m_nalu.len);
+  m_nalu.forbidden_bit = (m_nalu.buf[0] >> 7) & 1;
+  m_nalu.nal_reference_idc = (m_nalu.buf[0] >> 5) & 3;
+  m_nalu.nal_unit_type = NaluType(m_nalu.buf[0] & 0x1f);
 
   return (pos + rewind);
-
 }
+
 /*!
  *
  * \brief
- *    returns if new start code is found at byte aligned position buf.
+ *    Returns if new start code is found at byte aligned position buf.
  *    new-startcode is of form N 0x00 bytes, followed by a 0x01 byte.
  *
  *  \return
@@ -708,65 +630,67 @@ int AnnexB_packet::getpacket() {
  *  \param zeros_in_startcode
  *     indicates number of 0x00 bytes in start-code.
  *
- *	\author
- *	Matteo Naccari (adapted from the H.264/AVC decoder reference software)
+ * \author
+ * Matteo Naccari (adapted from the H.264/AVC decoder reference software)
 */
-int AnnexB_packet::FindStartCode(unsigned char* Buf, int zeros_in_startcode) {
+int AnnexBPacket::find_start_code(unsigned char* Buf, int zeros_in_startcode)
+{
   int info;
   int i;
 
   info = 1;
-  for (i = 0; i < zeros_in_startcode; i++)
+  for (i = 0; i < zeros_in_startcode; i++) {
     if (Buf[i] != 0)
       info = 0;
+  }
 
-  if (Buf[i] != 1)
+  if (Buf[i] != 1) {
     info = 0;
+  }
+
   return info;
 }
 
 /*!
  *
- *	\brief
+ * \brief
  *    Writes a NALU to the Annex B Byte Stream
  *
- *	\return
+ * \return
  *    number of bits written
  *
- *	\author
- *	Matteo Naccari (adapted from the H.264/AVC decoder reference software)
+ * \author
+ * Matteo Naccari (adapted from the H.264/AVC decoder reference software)
 */
-int AnnexB_packet::writepacket(FILE* f) {
+int AnnexBPacket::write_packet(ofstream& ofs)
+{
+  int bits_written = 0;
+  unsigned char zero = 0, one = 1;
 
-  int BitsWritten = 0;
-
-  assert(nalu != NULL);
-  assert(nalu->forbidden_bit == 0);
-  assert(f != NULL);
-  assert(nalu->startcodeprefix_len == 3 || nalu->startcodeprefix_len == 4);
-
-  // printf ("WriteAnnexbNALU: writing %d bytes w/ startcode_len %d\n", n->len+1, n->startcodeprefix_len);
-  if (nalu->startcodeprefix_len > 3)
-  {
-    putc(0, f);
-    BitsWritten = +8;
+  if (m_nalu.forbidden_bit) {
+    throw logic_error("Forbidden bit is not zero");
   }
-  putc(0, f);
-  putc(0, f);
-  putc(1, f);
-  BitsWritten += 24;
 
-  nalu->buf[0] = (unsigned char)((nalu->forbidden_bit << 7) | (nalu->nal_reference_idc << 5) | nalu->nal_unit_type);
-
-  if (nalu->len != fwrite(nalu->buf, 1, nalu->len, f))
-  {
-    printf("Fatal: cannot write %d bytes to bitstream file, exit (-1)\n", nalu->len);
-    exit(-1);
+  if (!(m_nalu.startcodeprefix_len == 3 || m_nalu.startcodeprefix_len == 4)) {
+    throw logic_error("m_nalu.startcodeprefix_len == 3 || m_nalu.startcodeprefix_len == 4, violated");
   }
-  BitsWritten += nalu->len * 8;
 
-  fflush(f);
+  if (m_nalu.startcodeprefix_len > 3) {
+    ofs.write(reinterpret_cast<char*>(&zero), 1);
+    bits_written += 8;
+  }
+  ofs.write(reinterpret_cast<char*>(&zero), 1);
+  ofs.write(reinterpret_cast<char*>(&zero), 1);
+  ofs.write(reinterpret_cast<char*>(&one), 1);
+  bits_written += 24;
 
-  return BitsWritten;
+  m_nalu.buf[0] = (unsigned char)((m_nalu.forbidden_bit << 7) | (m_nalu.nal_reference_idc << 5) | int(m_nalu.nal_unit_type));
 
+  ofs.write(reinterpret_cast<char*>(&m_nalu.buf[0]), m_nalu.len);
+  bits_written += m_nalu.len * 8;
+
+  ofs.flush();
+
+  return bits_written;
 }
+/////////////////////////////////////////////////////////////////////////////////////////

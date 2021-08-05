@@ -35,87 +35,92 @@
  *
 */
 #include "parameters.h"
+#include <regex>
+#include <iostream>
+#include <fstream>
 
 /*!
  *
- *	\brief
- *	First constructor whereby the parameters are passed via command line
+ * \brief
+ * First constructor whereby the parameters are passed via command line
  *
- *	\param
- *	argv, string of input parameters
+ * \param
+ * argv, 2D array of char
  *
- *	\author
- *	Matteo Naccari
+ * \author
+ * Matteo Naccari
  *
 */
 
-Parameters::Parameters(char** argv) {
+Parameters::Parameters(char** argv)
+  : m_bitstream_original(argv[1])
+  , m_bitstream_transmitted(argv[2])
+  , m_loss_pattern_file(argv[3])
+{
+  m_packet_type = stoi(argv[4]);
 
-  bitstream_original = argv[1];
+  m_offset = stoi(argv[5]);
 
-  bitstream_transmitted = argv[2];
-
-  loss_pattern_file = argv[3];
-
-  packet_type = atoi(argv[4]);
-
-  offset = atoi(argv[5]);
-
-  modality = atoi(argv[6]);
+  m_modality = stoi(argv[6]);
 
   check_parameters();
 }
 
 /*!
  *
- *	\brief
- *	Second constructor whereby the parameters are passed via configuration file
+ * \brief
+ * Second constructor whereby the parameters are passed via configuration file
  *
- *	\param
- *	argv, name of the configuration file
+ * \param
+ * argv, name of the configuration file
  *
- *	\author
- *	Matteo Naccari
+ * \author
+ * Matteo Naccari
  *
 */
 
-Parameters::Parameters(char* argv) {
+Parameters::Parameters(char* argv)
+{
   string line;
   int i = 0;
-  char temp[100];
   ifstream fin;
+
+  regex pattern_str("[^ ]+");
+  regex pattern_nr("[+-]?[0-9]+");
+  smatch match;
 
   fin.open(argv, ifstream::in);
 
   if (!fin) {
-    cout << "Cannot open config file " << argv << " abort" << endl;
-    exit(-1);
+    throw runtime_error("Cannot open config file " + string(argv) + " abort");
   }
 
   while (getline(fin, line, '\n')) {
     if (valid_line(line)) {
-      switch (i)
-      {
+      switch (i) {
       case 0:
-        sscanf(line.c_str(), "%s", temp);
-        bitstream_original = temp;
+        regex_search(line, match, pattern_str);
+        m_bitstream_original = match[0];
         break;
       case 1:
-        sscanf(line.c_str(), "%s", temp);
-        bitstream_transmitted = temp;
+        regex_search(line, match, pattern_str);
+        m_bitstream_transmitted = match[0];
         break;
       case 2:
-        sscanf(line.c_str(), "%s", temp);
-        loss_pattern_file = temp;
+        regex_search(line, match, pattern_str);
+        m_loss_pattern_file = match[0];
         break;
       case 3:
-        sscanf(line.c_str(), "%d", &packet_type);
+        regex_search(line, match, pattern_nr);
+        m_packet_type = stoi(match[0]);
         break;
       case 4:
-        sscanf(line.c_str(), "%d", &offset);
+        regex_search(line, match, pattern_nr);
+        m_offset = stoi(match[0]);
         break;
       case 5:
-        sscanf(line.c_str(), "%d", &modality);
+        regex_search(line, match, pattern_nr);
+        m_modality = stoi(match[0]);
         break;
       default:
         cout << "Something wrong: (?)" << line << endl;
@@ -123,49 +128,52 @@ Parameters::Parameters(char* argv) {
       i++;
     }
   }
-
-  fin.close();
   check_parameters();
 }
 
 /*!
  *
- *	\brief
- *	It reads a valid line from the configuration file. A valid line is a text line
- *	that does not start with the following characters: #, carriage return, space or
- *	new line
+ * \brief
+ * Reads a valid line from the configuration file. A valid line is a text line
+ * that does not start with the following characters: #, carriage return, space or
+ * new line
  *
- *	\param
- *	line a char array containing the current line read from the configuration file
+ * \param
+ * line a char array containing the current line read from the configuration file
  *
- *	\return
- *	True if the current line is valid line
- *	False otherwise
+ * \return
+ * True if the current line is a valid line
+ * False otherwise
  *
- *	\author
- *	Matteo Naccari
+ * \author
+ * Matteo Naccari
 */
 
-bool Parameters::valid_line(string line) {
-  if (line.length() == 0)
+bool Parameters::valid_line(const string& line)
+{
+  if (line.length() == 0 || line.at(0) == '\r' || line.at(0) == '#' || line.at(0) == ' ' || line.at(0) == '\n') {
     return 0;
-  if (line.at(0) == '\r' || line.at(0) == '#' || line.at(0) == ' ' || line.at(0) == '\n')
-    return 0;
+  }
   return 1;
 }
 
-Parameters::~Parameters() {
-}
-
-void Parameters::check_parameters() {
-
-  if (offset < 0) {
-    cout << "Warning! Offset = " << offset << " is not allowed, set it to zero\n";
-    offset = 0;
+/*!
+ *
+ * \brief
+ * Checks the compliance of the input parameters. A fault tolerant policy is adopted, i.e. only warnings are issued and the default values
+ * are set accordingly
+ *
+ * \author
+ * Matteo Naccari
+*/
+void Parameters::check_parameters()
+{
+  if (m_offset < 0) {
+    cout << "Warning! Offset = " << m_offset << " is not allowed, set it to zero\n";
+    m_offset = 0;
   }
-  if (!(0 <= modality && modality <= 2)) {
-    cout << "Warning! Modality = " << modality << " is not allowed, set it to zero\n";
-    modality = 0;
+  if (!(0 <= m_modality && m_modality <= 2)) {
+    cout << "Warning! Modality = " << m_modality << " is not allowed, set it to zero\n";
+    m_modality = 0;
   }
-
 }

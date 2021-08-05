@@ -37,6 +37,8 @@
 
 #include "parameters.h"
 #include <regex>
+#include <iostream>
+#include <fstream>
 
 /*!
  *
@@ -55,9 +57,9 @@ Parameters::Parameters(char** argv)
   , m_bitstream_transmitted(argv[2])
   , m_loss_pattern_file(argv[3])
 {
-  m_offset = atoi(argv[4]);
+  m_offset = stoi(argv[4]);
 
-  m_modality = atoi(argv[5]);
+  m_modality = stoi(argv[5]);
 
   check_parameters();
 }
@@ -106,11 +108,11 @@ Parameters::Parameters(char* argv)
         break;
       case 3:
         regex_search(line, match, pattern_nr);
-        m_offset = atoi(string(match[0]).c_str());
+        m_offset = stoi(match[0]);
         break;
       case 4:
         regex_search(line, match, pattern_nr);
-        m_modality = atoi(string(match[0]).c_str());
+        m_modality = stoi(match[0]);
         break;
       default:
         cout << "Something wrong: (?)" << line << endl;

@@ -36,6 +36,7 @@
 */
 
 #include "simulator.h"
+#include <iostream>
 
 /*!
  *
@@ -83,8 +84,6 @@ Simulator::Simulator(const Parameters& p)
   temp_str = new char[m_numchar];
 
   fp_losspattern.get(temp_str, m_numchar);
-
-  fp_losspattern.close();
 
   temp_loss_pattern = temp_str;
 
@@ -150,33 +149,31 @@ void Simulator::run_simulator()
       break;
     case 1:
       // Corrupt all slices but the intra ones: check whether the current slice is actually intra coded
-      if (m_packet.get_slice_type() == SliceType::I_SLICE)
+      if (m_packet.get_slice_type() == SliceType::I_SLICE) {
         writeable = 1;
+      }
       break;
     case 2:
       // Corrupts only intra coded slices: check whether current slice is not intra coded
-      if (m_packet.get_slice_type() != SliceType::I_SLICE)
+      if (m_packet.get_slice_type() != SliceType::I_SLICE) {
         writeable = 1;
+      }
       break;
     }
 
     if (!m_packet.is_nalu_vcl()) {
       bytes = m_packet.write_packet(m_fp_tr_bitstream);
-    }
-    else if (m_loss_pattern[i] == '0') {
+    } else if (m_loss_pattern[i] == '0') {
       bytes = m_packet.write_packet(m_fp_tr_bitstream);
       i++;
-    }
-    else if (m_loss_pattern[i] == '1') {
+    } else if (m_loss_pattern[i] == '1') {
       if (writeable) {
         // Writes although the slice is ought to be discarded: this is because the modality chosen says to do so
         bytes = m_packet.write_packet(m_fp_tr_bitstream);
-      }
-      else {
+      } else {
         i++;
       }
-    }
-    else {
+    } else {
       cerr << "Wrong character used in the error pattern string: " << m_loss_pattern[i] << '\n';
     }
 

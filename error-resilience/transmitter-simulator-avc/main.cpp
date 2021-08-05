@@ -39,14 +39,30 @@
 #include "simulator.h"
 #include <iostream>
 #include <fstream>
+#include <exception>
 
 #define VERSION 0.2
 
-void inline_help();
+/*!
+ *  \brief
+ * It prints on the screen a little help on the program usage
+ *
+ *  \author
+ *  Matteo Naccari
+ *
+*/
+void inline_help()
+{
+  cout << endl << endl << "\tTransmitter Simulator for the H.264/AVC standard. Version " << VERSION << "\n\n";
+  cout << "\tCopyright Matteo Naccari" << endl << endl;
+  cout << "\tUsage (1): transmitter-simulator-avc <in_bitstream> <out_bitstream> <loss_pattern_file> <packet_type> <offset> <modality>\n\n";
+  cout << "\tUsage (2): transmitter-simulator-avc <configuration_file>\n\n";
+  cout << "See configuration file for further information on parameters.\n\n";
+}
 
 /*!
  *  \brief
- *	The main function, i.e. the entry point of the program
+ * The main function, i.e. the entry point of the program
  *  Note:
  *      The error patter file must contain only '0' and '1' ASCII
  *      characters (8 bits). The character '0' means that no channel error
@@ -60,46 +76,25 @@ void inline_help();
 */
 
 int main(int argc, char** argv) {
-  Parameters* p = nullptr;
-  Simulator* sim;
+  unique_ptr<Parameters> p;
+  unique_ptr<Simulator> sim;
 
-  if (argc == 2) {
-    p = new Parameters(argv[1]);
+  try {
+    if (argc == 2) {
+      p = make_unique<Parameters>(argv[1]);
+    } else if (argc == 7) {
+      p = make_unique<Parameters>(argv);
+    } else {
+      inline_help();
+      return EXIT_SUCCESS;
+    }
+
+    sim = make_unique<Simulator>(*p);
+    sim->run_simulator();
+  } catch (exception e) {
+    cerr << "Something went wrong: " << e.what() << endl;
+    return EXIT_FAILURE;
   }
-  else if (argc == 7)
-    p = new Parameters(argv);
-  else
-    inline_help();
-  sim = new Simulator(p);
-  sim->Run_Simulator();
-  delete p;
-  delete sim;
 
   return EXIT_SUCCESS;
-}
-
-/*!
- *  \brief
- *	It prints on the screen a little help on the program usage
- *
- *  \author
- *  Matteo Naccari
- *
-*/
-
-void inline_help() {
-
-#ifdef _WIN32
-  system("cls");
-#else
-  system("clear");
-#endif
-  cout << endl << endl << "\tTransmitter Simulator version " << VERSION << "\n\n";
-  cout << "\tMatteo Naccari ISPG Lab. (Politecnico di Milano)" << endl;
-  cout << "\tnaccari@elet.polimi.it" << endl << endl;
-  cout << "\tUsage (1): transmitter-simulator-avc <in_bitstream> <out_bitstream> <loss_pattern_file> <packet_type> <offset> <modality>\n\n";
-  cout << "\tUsage (2): transmitter-simulator-avc <configuration_file>\n\n";
-  cout << "See configuration file for further information on parameters\n\n";
-  exit(EXIT_SUCCESS);
-
 }

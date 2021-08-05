@@ -35,170 +35,172 @@
  *
 */
 #include "simulator.h"
+#include <iostream>
 
 /*!
  *
- *	\brief
- *	The constructor for the simulator class. It sets up all the transmission enviroment:
- *	bitstream being transmitted, received bitstream, error pattern file (the simulated error
- *	prone channel) and the packetization used (AnnexB or RTP)
+ * \brief
+ * The constructor for the simulator class. It sets up all the transmission enviroment:
+ * bitstream being transmitted, received bitstream, error pattern file (the simulated error
+ * prone channel) and the packetization used (AnnexB or RTP)
  *
- *	\param
- *	p a pointer to a parameters object which contains all the transmission parameters
+ * \param
+ * p a pointer to a parameters object which contains all the transmission parameters
  *
- *	\author
- *	Matteo Naccari
+ * \author
+ * Matteo Naccari
  *
 */
 
-Simulator::Simulator(Parameters* p) {
-
+Simulator::Simulator(const Parameters& p)
+  : m_param(p)
+{
   string temp_loss_pattern;
   char* temp_str;
   int offset;
 
-  param = p;
-
-  if ((fp_bitstream = fopen(param->get_bitstream_original_filename().c_str(), "rb")) == NULL) {
-    cout << "Cannot open " << param->get_bitstream_original_filename() << "input bitstream, abort" << endl;
-    exit(-1);
+  m_fp_bitstream.open(m_param.get_bitstream_original_filename(), ios::binary);
+  if (!m_fp_bitstream) {
+    throw runtime_error("Cannot open " + m_param.get_bitstream_original_filename() + " input bitstream, abort");
   }
 
-  if ((fp_tr_bitstream = fopen(param->get_bitstream_transmitted_filename().c_str(), "wb+")) == NULL) {
-    cout << "Cannot open " << param->get_bitstream_transmitted_filename() << "transmitted bitstream, abort" << endl;
-    exit(-1);
+  m_fp_tr_bitstream.open(m_param.get_bitstream_transmitted_filename(), ios::binary);
+  if (!m_fp_tr_bitstream) {
+    throw runtime_error("Cannot open " + m_param.get_bitstream_transmitted_filename() + " transmitted bitstream, abort");
   }
 
-  if (param->get_packet_type() == 0) { //RTP
-    packet = new Rtp_packet();
-  }
-  else if (param->get_packet_type() == 1) { //Annex B
-    packet = new AnnexB_packet();
-  }
-  else {
-    cout << "Bad packet type, abort" << endl;
-    exit(-1);
+  if (m_param.get_packet_type() == 0) { //RTP
+    m_packet = make_unique<RtpPacket>();
+  } else if (m_param.get_packet_type() == 1) { //Annex B
+    m_packet = make_unique<AnnexBPacket>();
+  } else {
+    throw runtime_error("Bad packet type: " + to_string(m_param.get_packet_type()));
   }
 
-  fp_losspattern.open(param->get_loss_pattern_filename().c_str(), ifstream::in);
+  ifstream  fp_losspattern(m_param.get_loss_pattern_filename().c_str(), ifstream::in);
 
   if (!fp_losspattern) {
-    cout << "Cannot open " << param->get_loss_pattern_filename() << "loss pattern file, abort" << endl;
-    exit(-1);
+    runtime_error("Cannot open " + m_param.get_loss_pattern_filename() + " loss pattern file, abort");
   }
 
   fp_losspattern.seekg(0, ios_base::end);
 
-  numchar = fp_losspattern.tellg();
+  m_numchar = static_cast<int>(fp_losspattern.tellg());
 
   fp_losspattern.seekg(0, ios::beg);
 
-  temp_str = new char[numchar];
+  temp_str = new char[m_numchar];
 
-  fp_losspattern.get(temp_str, numchar);
-
-  fp_losspattern.close();
+  fp_losspattern.get(temp_str, m_numchar);
 
   temp_loss_pattern = temp_str;
 
-  delete temp_str;
+  delete[] temp_str;
 
-  //It builds the new error pattern string in order to simulate different channel
-//realizations
-  offset = param->get_offset() % temp_loss_pattern.length();
+  // Builds the new error pattern string in order to simulate different channel realisations
+  offset = m_param.get_offset() % temp_loss_pattern.length();
 
-  loss_pattern = temp_loss_pattern.substr(offset, temp_loss_pattern.length() - offset);
+  m_loss_pattern = temp_loss_pattern.substr(offset, temp_loss_pattern.length() - offset);
 
-  loss_pattern.append(temp_loss_pattern.substr(0, offset));
+  m_loss_pattern.append(temp_loss_pattern.substr(0, offset));
 }
 
 /*!
  *
- *	\brief
- *	It simulates the transmission of one coded bitstream through an error prone channel.
- *	The method reads every nalu which corresponds to a coded slice. For each nalu the
- *	Run_Simulator checks whether the current slice contains coded data rather than syntax
- *	parameters as for example PPS, SPS, etc.
- *	If the current slice contains coded data, then the Run_Simulator funtion decodes the
- *	slice type in order to finalize the decision of transmitting or corrupting the data
- *	Note:
- *		The Run_Simulator function does not corrupt the nalus corresponding to the first
- *		video sequence frame
+ * \brief
+ * Simulates the transmission of one coded bitstream through an error prone channel.
+ * The method reads every nalu which corresponds to a coded slice. For each nalu the
+ * method checks whether the current slice contains coded data rather than syntax
+ * parameters as for example PPS, SPS, etc.
+ * If the current slice contains coded data, then the Run_Simulator funtion decodes the
+ * slice type in order to finalize the decision of transmitting or corrupting the data
  *
- *	\author
- *	Matteo Naccari
+ * \author
+ * Matteo Naccari
  *
 */
 
-void Simulator::Run_Simulator() {
+void Simulator::run_simulator()
+{
+  int i = 0, bytes, writeable;
 
-  int i = 0, read, writeable, timestamp;
-
-  packet->setBitsFile(fp_bitstream);
+  print_header();
 
   while (true) {
-    if (feof(fp_bitstream))
+    if (m_fp_bitstream.eof()) {
       break;
+    }
     writeable = 0;
-    read = packet->getpacket();
+    bytes = m_packet->get_packet(m_fp_bitstream);
 
     //Slice type decoding only for coded data slices [1:5]
-    if (packet->get_nalu_type() <= 5) {
-      packet->decode_slice_type();
+    if (m_packet->is_nalu_vcl()) {
+      m_packet->decode_slice_type();
     }
 
-    if (read <= 0) {
+    if (bytes <= 0) {
       break;
     }
 
-    switch (param->get_modality())
+    switch (m_param.get_modality())
     {
-    case 0:  //	Normal corruption: do nothing
+    case 0:
+      // Normal corruption: do nothing
       break;
-    case 1:  //	It corrupts all the slice but the intra ones:
-         //	check whether the current slice is actually intra coded
-      if (packet->get_slice_type() == I_SLICE)
+    case 1:
+      // Corrupt all slices but the intra ones: check whether the current slice is actually intra coded
+      if (m_packet->get_slice_type() == SliceType::I_SLICE) {
         writeable = 1;
-      break;
-    case 2:  //	It corrupts only intra coded slices: check whether current
-           //	slice is not intra coded
-      if (packet->get_slice_type() != I_SLICE)
-        writeable = 1;
-      break;
-    }
-
-    timestamp = packet->get_timestamp();
-
-    if (loss_pattern.at(i) == '0' || timestamp == 0 || packet->get_nalu_type() > 5) {
-      read = packet->writepacket(fp_tr_bitstream);
-      i++;
-    }
-    else if (loss_pattern.at(i) == '1') {
-      if (writeable) { //It writes although the slice has to be discarded
-        read = packet->writepacket(fp_tr_bitstream);
       }
-      else {
+      break;
+    case 2:
+      // Corrupts only intra coded slices: check whether the current slice is not intra coded
+      if (m_packet->get_slice_type() != SliceType::I_SLICE) {
+        writeable = 1;
+      }
+      break;
+    }
+
+    if (!m_packet->is_nalu_vcl()) {
+      bytes = m_packet->write_packet(m_fp_tr_bitstream);
+    } else if (m_loss_pattern[i] == '0') {
+      bytes = m_packet->write_packet(m_fp_tr_bitstream);
+      i++;
+    } else if (m_loss_pattern[i] == '1') {
+      if (writeable) {
+        // Writes although the slice is ought to be discarded: this is because the modality chosen says to do so
+        bytes = m_packet->write_packet(m_fp_tr_bitstream);
+      } else {
         i++;
       }
-    }
-    else {
-      cout << "problems!\n";
+    } else {
+      cerr << "Wrong character used in the error pattern string: " << m_loss_pattern[i] << '\n';
     }
 
-    if (i >= numchar - 1) //circular buffer
+    if (i >= m_numchar - 1) {
+      // Mimics a circular buffer
       i = 0;
+    }
   }
 }
+
 /*!
  *
- *	\brief
- *	Destructor of the Simulator class
+ * \brief
+ * Prints the operating settings of the simulator so the user can be sure the software has been provided with the right inputs
  *
- *	\author
- *	Matteo Naccari
- */
-Simulator::~Simulator() {
-  fclose(fp_bitstream);
-  fclose(fp_tr_bitstream);
-  delete packet;
+ * \author
+ * Matteo Naccari
+ *
+*/
+void Simulator::print_header()
+{
+  const string corruption_modality_text[] = { "all", "all but intra", "intra only" };
+  const string packet_type_text[] = { "RTP", "AnnexB" };
+  cout << "Input bitstream: " << m_param.get_bitstream_original_filename() << endl;
+  cout << "Transmitted bitstream: " << m_param.get_bitstream_transmitted_filename() << endl;
+  cout << "Error pattern file: " << m_param.get_loss_pattern_filename() << endl;
+  cout << "Packet type: " << packet_type_text[m_param.get_packet_type()] << endl;
+  cout << "Starting offset: " << m_param.get_offset() << endl;
+  cout << "Corruption modality: " << corruption_modality_text[m_param.get_modality()] << endl << endl;
 }

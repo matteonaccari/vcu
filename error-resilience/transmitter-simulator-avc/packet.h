@@ -38,9 +38,10 @@
 #ifndef H_PACKET_
 #define H_PACKET_
 
-#include <stdio.h>
 #include <iostream>
-#include <assert.h>
+#include <fstream>
+#include <vector>
+
 #ifdef _WIN32
 #include <Winsock2.h>
 #else
@@ -48,86 +49,118 @@
 #endif
 
 using namespace std;
-typedef unsigned char byte;
-typedef enum
+
+constexpr uint32_t nalu_max_size = 8000000;
+
+enum class SliceType
 {
   P_SLICE = 0,
   B_SLICE,
   I_SLICE,
   SP_SLICE,
   SI_SLICE
-} SliceType;
+};
 
-/*!
- *
- *	\brief
- *	The Packet which models a coded packet corresponding to the bitstream being transmitted
- *	This class will be specialized into the Rtp_packet and AnnexB_packet classes in order
- *	to tackle different bitstream packetizations
- *
- *	\author
- *	Matteo Naccari
-*/
-
-class Packet {
-
-public:
-  FILE* bits;
-  //!	Structure corresponding to a Network Abstraction Layer Unit (NALU)
-  struct NALU_t {
-    int startcodeprefix_len; //! 4 for parameter sets and first slice in picture, 3 for everything else (suggested)
-    unsigned len;            //! Length of the NAL unit (Excluding the start code, which does not belong to the NALU)
-    unsigned max_size;       //! Nal Unit Buffer size
-    int nal_unit_type;       //! NALU_TYPE_xxxx
-    int nal_reference_idc;   //! NALU_PRIORITY_xxxx
-    int forbidden_bit;       //! Should be always FALSE
-    byte* buf;               //! Contains the first byte followed by the EBSP
-  };
-
-  NALU_t* nalu;
-  //! Offset in bit units inside the current packet. It will serve for exp-Golomb decoding
-  int frame_bitoffset;
-
-  //! Type of the slice contained in the packet being transmitted
-  SliceType slice_type;
-
-  //! It allocates the memory space for a NALU
-  void AllocNALU(int buffersize);
-
-  void decode_slice_type();
-
-  //! It performs exponential-Golomb decoding with unsigned direct mapping of the VLC
-  //!	codeword
-  int exp_golomb_decoding(byte* buffer);
-
-  //!	Packet constructor, it just allocates memory for a coded packet (NALU).
-  //!	Further operation will follow in the class' specializations
-  Packet() { AllocNALU(8000000); }
-
-  //! Packet destructor
-  ~Packet() { FreeNALU(nalu); }
-
-  void FreeNALU(NALU_t* n);
-  int get_nalu_type() { return nalu->nal_unit_type; }
-  SliceType get_slice_type() { return slice_type; }
-
-  //!	The following functions will be implemented in the class' specializations
-  virtual int getpacket() = 0;
-  virtual int writepacket(FILE* f) = 0;
-  virtual void setBitsFile(FILE* file) = 0;
-  virtual int get_timestamp() { return -1; }
+enum class NaluType
+{
+  NALU_TYPE_SLICE = 1,
+  NALU_TYPE_DPA = 2,
+  NALU_TYPE_DPB = 3,
+  NALU_TYPE_DPC = 4,
+  NALU_TYPE_IDR = 5,
+  NALU_TYPE_SEI = 6,
+  NALU_TYPE_SPS = 7,
+  NALU_TYPE_PPS = 8,
+  NALU_TYPE_AUD = 9,
+  NALU_TYPE_EOSEQ = 10,
+  NALU_TYPE_EOSTREAM = 11,
+  NALU_TYPE_FILL = 12,
+  NALU_TYPE_PREFIX = 14,
+  NALU_TYPE_SUB_SPS = 15,
+  NALU_TYPE_SLC_EXT = 20,
+  NALU_TYPE_VDRD = 24  // View and Dependency Representation Delimiter NAL Unit
 };
 
 /*!
  *
- *	\brief
- *	The Real-time Transfer Protocol (RTP) specialization of the Packet class
+ * \brief
+ * Structure corresponding to a Network Abstraction Layer Unit (NALU) as specified in Annex B of the standard
  *
- *	\author
- *	Matteo Naccari
+ * \author
+ * Matteo Naccari
+*/
+struct NALU
+{
+  int startcodeprefix_len; //! 4 for parameter sets and first slice in picture, 3 for everything else (suggested)
+  unsigned len;            //! Length of the NAL unit (Excluding the start code, which does not belong to the NALU)
+  unsigned max_size;       //! Nal Unit Buffer size
+  NaluType nal_unit_type;  //! NALU_TYPE
+  int nal_reference_idc;   //! NALU_PRIORITY
+  int forbidden_bit;       //! Should be always FALSE
+  vector<uint8_t> buf;     //! Contains the first byte followed by the EBSP
+
+  bool is_nalu_vcl()
+  {
+    return int(nal_unit_type) <= int(NaluType::NALU_TYPE_IDR);
+  }
+};
+
+/*!
+ *
+ * \brief
+ * The Packet which models a coded packet corresponding to the bitstream being transmitted
+ * This class will be specialized into the Rtp_packet and AnnexB_packet classes in order
+ * to tackle different bitstream packetizations
+ *
+ * \author
+ * Matteo Naccari
+*/
+class Packet
+{
+
+public:
+  NALU m_nalu;
+  //! Offset in bit units inside the current packet. It will serve for exp-Golomb decoding
+  int m_frame_bitoffset;
+
+  //! Type of the slice contained in the packet being transmitted
+  SliceType m_slice_type;
+
+  //! It allocates the memory space for a NALU
+  void alloc_nalu(int buffersize);
+
+  void decode_slice_type();
+
+  //! Performs exponential-Golomb decoding with unsigned direct mapping of the VLC codeword
+  int exp_golomb_decoding(uint8_t* buffer);
+
+  //! Packet constructor, it just allocates memory for a coded packet (NALU).
+  //! Further operation will follow in the class' specializations
+  Packet() { alloc_nalu(8000000); }
+
+  //! Packet destructor
+  ~Packet() {}
+
+  bool is_nalu_vcl() { return m_nalu.is_nalu_vcl(); }
+  SliceType get_slice_type() { return m_slice_type; }
+
+  //! The following functions will be implemented in the class' specialisations
+  virtual int get_packet(ifstream& ifs) = 0;
+  virtual int write_packet(ofstream& ofs) = 0;
+};
+
+/*!
+ *
+ * \brief
+ * The Real-time Transfer Protocol (RTP) specialization of the Packet class
+ *
+ * \author
+ * Matteo Naccari
 */
 
-class Rtp_packet : public Packet {
+class RtpPacket : public Packet
+{
+
 private:
 #define MAXRTPPACKETSIZE  (65536 - 28)
 #define H26LPAYLOADTYPE 105
@@ -138,76 +171,70 @@ private:
     unsigned int v;          //!< Version, 2 bits, MUST be 0x2
     unsigned int p;          //!< Padding bit, Padding MUST NOT be used
     unsigned int x;          //!< Extension, MUST be zero
-    unsigned int cc;         /*!< CSRC count, normally 0 in the absence
-                    of RTP mixers */
+    unsigned int cc;         //!< CSRC count, normally 0 in the absence of RTP mixers
     unsigned int m;          //!< Marker bit
-    unsigned int pt;         //!< 7 bits, Payload Type, dynamically established 
-    unsigned int seq;        /*!< RTP sequence number, incremented by one for
-                    each sent packet */
+    unsigned int pt;         //!< 7 bits, Payload Type, dynamically established
+    unsigned int seq;        //!< RTP sequence number, incremented by one for each sent packet
     unsigned int old_seq;    //!< to detect wether packets were lost
     unsigned int timestamp;  //!< timestamp, 27 MHz for H.264
     unsigned int ssrc;       //!< Synchronization Source, chosen randomly
-    byte* payload;    //!< the payload including payload headers
+    vector<uint8_t> payload; //!< the payload including payload headers
     unsigned int paylen;     //!< length of payload in bytes
-    byte* packet;     //!< complete packet including header and payload
-    unsigned int packlen;    //!< length of packet, typically paylen+12			
-  }RTPpacket_t;
+    vector<uint8_t> packet;  //!< complete packet including header and payload
+    unsigned int packlen;    //!< length of packet, typically paylen+12
+  } RtpData;
 
-  RTPpacket_t* p;
+  RtpData m_rtp_data;
 
-  int CurrentRTPSequenceNumber, CurrentRTPTimestamp;
+  int current_rtp_sequence_number, current_rtp_time_stamp;
 
-public:
+  int decompose_rtp_packet();
 
-  //!	Constructor for the Rtp_packet class 
-  Rtp_packet() {
-    allocate_rtp_packet();
-    CurrentRTPSequenceNumber = 0;
-    CurrentRTPTimestamp = 0;
-  }
+  int rtp_read_packet(ifstream& ifs);
 
-  ~Rtp_packet();
-
-  int DecomposeRTPpacket();
-
-  int RTPReadPacket(FILE* bits);
-
-  void DumpRTPHeader();
-
-  int getpacket();
+  void dump_rtp_header();
 
   void allocate_rtp_packet();
 
-  void setBitsFile(FILE* file) { bits = file; }
+  int compose_rtp_packet();
 
-  int writepacket(FILE* f);
+  int write_rtp_packet(ofstream& ofs);
 
-  int ComposeRTPPacket();
+public:
+  RtpPacket()
+  {
+    allocate_rtp_packet();
+    current_rtp_sequence_number = 0;
+    current_rtp_time_stamp = 0;
+  }
 
-  int WriteRTPPacket(FILE* f);
+  ~RtpPacket() {}
 
-  int get_timestamp() { return p->timestamp; }
+  int get_packet(ifstream& ifs);
 
+  int write_packet(ofstream& ofs);
 };
 
 /*!
  *
- *	\brief
- *	The Annex B specialization of the Packet class
+ * \brief
+ * The Annex B specialization of the Packet class
  *
- *	\author
- *	Matteo Naccari
+ * \author
+ * Matteo Naccari
 */
 
-class AnnexB_packet : public Packet {
+class AnnexBPacket : public Packet
+{
+
 private:
-  int IsFirstByteStreamNALU;
+  int m_is_first_byte_stream_nalu;
+  int find_start_code(unsigned char* buf, int zeros_in_startcode);
+
 public:
-  AnnexB_packet() { IsFirstByteStreamNALU = 1; }
-  void setBitsFile(FILE* file) { bits = file; }
-  int getpacket();
-  int FindStartCode(unsigned char* Buf, int zeros_in_startcode);
-  int writepacket(FILE* f);  
+  AnnexBPacket() { m_is_first_byte_stream_nalu = 1; }
+  int get_packet(ifstream& ifs);
+  int write_packet(ofstream& ofs);
 };
 
 #endif

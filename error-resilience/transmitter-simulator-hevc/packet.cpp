@@ -36,8 +36,8 @@
 */
 
 #include "packet.h"
-#include <cassert>
 #include <cstring>
+#include <iostream>
 
 /*!
  *
@@ -81,12 +81,15 @@ int Packet::find_start_code(unsigned char* buf, int zeros_in_startcode) {
   int i;
 
   info = 1;
-  for (i = 0; i < zeros_in_startcode; i++)
+  for (i = 0; i < zeros_in_startcode; i++) {
     if (buf[i] != 0)
       info = 0;
+  }
 
-  if (buf[i] != 1)
+  if (buf[i] != 1) {
     info = 0;
+  }
+
   return info;
 }
 
@@ -221,8 +224,7 @@ int Packet::get_packet(ifstream& bits)
   if (bits.eof()) {
     if (pos == 0) {
       return 0;
-    }
-    else {
+    } else {
       throw logic_error("getpacket: can't read start code");
     }
   }
@@ -233,12 +235,10 @@ int Packet::get_packet(ifstream& bits)
 
   if (pos < 3) {
     throw logic_error("getpacket: no Start Code at the begin of the NALU, return -1");
-  }
-  else if (pos == 3) {
+  } else if (pos == 3) {
     m_nalu.startcodeprefix_len = 3;
     leading_zero_8bits_count = 0;
-  }
-  else {
+  } else {
     leading_zero_8bits_count = pos - 4;
     m_nalu.startcodeprefix_len = 4;
   }
@@ -287,18 +287,16 @@ int Packet::get_packet(ifstream& bits)
   rewind = 0;
   if (info3 == 1) {
     rewind = -4;
-  }
-  else if (info2 == 1) {
+  } else if (info2 == 1) {
     rewind = -3;
-  }
-  else {
+  } else {
     // Should this be a game stopper?
     cerr << " Panic: Error in next start code search \n";
   }
 
   bits.seekg(rewind, ios::cur);
   if (bits.fail() || bits.bad()) {
-    logic_error("Something went wrong when moving the file pointer by " + to_string(rewind) + " bytes in the bitstream file");
+    throw logic_error("Something went wrong when moving the file pointer by " + to_string(rewind) + " bytes in the bitstream file");
   }
 
   m_nalu.len = (pos + rewind) - m_nalu.startcodeprefix_len - leading_zero_8bits_count - trailing_zero_8bits;
@@ -327,10 +325,14 @@ int Packet::write_packet(ofstream& ofs)
   int bits_written = 0;
   unsigned char zero = 0, one = 1;
 
-  assert(m_nalu.forbidden_bit == 0);
-  assert(m_nalu.startcodeprefix_len == 3 || m_nalu.startcodeprefix_len == 4);
+  if (m_nalu.forbidden_bit) {
+    throw logic_error("Forbidden bit is not zero");
+  }
 
-  // printf ("WriteAnnexbNALU: writing %d bytes w/ startcode_len %d\n", n->len+1, n->startcodeprefix_len);
+  if (!(m_nalu.startcodeprefix_len == 3 || m_nalu.startcodeprefix_len == 4)) {
+    throw logic_error("m_nalu.startcodeprefix_len == 3 || m_nalu.startcodeprefix_len == 4, violated");
+  }
+
   if (m_nalu.startcodeprefix_len > 3) {
     ofs.write(reinterpret_cast<char*>(&zero), 1);
     bits_written += 8;

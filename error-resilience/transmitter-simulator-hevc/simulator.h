@@ -38,7 +38,6 @@
 #ifndef H_SIMULATOR_
 #define H_SIMULATOR_
 
-#include <iostream>
 #include <fstream>
 #include "packet.h"
 #include "parameters.h"

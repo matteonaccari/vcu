@@ -37,35 +37,38 @@
 #ifndef H_SIMULATOR_
 #define H_SIMULATOR_
 
-#include <stdio.h>
-#include <iostream>
+#include <fstream>
 #include "packet.h"
 #include "parameters.h"
 
+using namespace std;
+
 /*!
  *
- *	\brief
- *	The simulator class which models the bitstream transmission over an error prone channel
+ * \brief
+ * The simulator class which models the bitstream transmission over an error prone channel
  *
- *	\author
- *	Matteo Naccari
+ * \author
+ * Matteo Naccari
 */
 
-class Simulator {
+class Simulator
+{
 
 private:
-  Packet* packet;
-  Parameters* param;
-  FILE* fp_bitstream;     //!	Transmitted bitstream
-  FILE* fp_tr_bitstream;  //!	Received bitstream
-  ifstream fp_losspattern;
-  string loss_pattern;
-  int numchar;
+  unique_ptr<Packet> m_packet;
+  const Parameters& m_param;
+  ifstream m_fp_bitstream;     //! Transmitted bitstream
+  ofstream m_fp_tr_bitstream;  //! Received bitstream
+  string m_loss_pattern;
+  int m_numchar;
+
+  void print_header();
 
 public:
-  Simulator(Parameters* p);  //!	Constructor with configuration parameters
-  ~Simulator();
-  void Run_Simulator();	   //!	Method to simulate the bitstream transmission
+  Simulator(const Parameters& p);  //! Constructor with configuration parameters
+  ~Simulator() {}
+  void run_simulator();    //! Method to simulate the bitstream transmission
 };
 
 #endif

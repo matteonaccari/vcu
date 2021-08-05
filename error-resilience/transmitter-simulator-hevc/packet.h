@@ -38,7 +38,6 @@
 #ifndef H_PACKET_
 #define H_PACKET_
 
-#include <iostream>
 #include <fstream>
 #include <vector>
 #include <cstdint>

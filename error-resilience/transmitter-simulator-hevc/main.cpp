@@ -40,9 +40,7 @@
 #include "parameters.h"
 #include "simulator.h"
 #include <iostream>
-#include <fstream>
 #include <exception>
-#include <memory>
 
 using namespace std;
 
@@ -85,19 +83,16 @@ int main(int argc, char** argv)
   try {
     if (argc == 2) {
       p = make_unique<Parameters>(argv[1]);
-    }
-    else if (argc == 6) {
+    } else if (argc == 6) {
       p = make_unique<Parameters>(argv);
-    }
-    else {
+    } else {
       inline_help();
       return EXIT_SUCCESS;
     }
 
     sim = make_unique<Simulator>(*p);
     sim->run_simulator();
-  }
-  catch (exception e) {
+  } catch (exception e) {
     cerr << "Something went wrong: " << e.what() << endl;
     return EXIT_FAILURE;
   }
