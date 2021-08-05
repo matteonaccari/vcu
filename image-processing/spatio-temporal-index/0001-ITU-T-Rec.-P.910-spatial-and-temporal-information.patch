@@ -1,4 +1,4 @@
-From 2798fdf7889055306e25ba48c409febfa482c1d8 Mon Sep 17 00:00:00 2001
+From 831db411a8247e278ef3c47fa10f35acb8936d76 Mon Sep 17 00:00:00 2001
 From: Matteo Naccari <matteo.naccari@gmail.com>
 Date: Sat, 20 Feb 2021 20:27:34 +0000
 Subject: [PATCH] ITU-T Rec. P.910 spatial and temporal information
@@ -14,10 +14,10 @@ Subject: [PATCH] ITU-T Rec. P.910 spatial and temporal information
  create mode 100644 libavfilter/vf_spatiotemporalinfo.c
 
 diff --git a/doc/filters.texi b/doc/filters.texi
-index 426cb158da..dd5999e950 100644
+index 28996a4a64..506a7e3073 100644
 --- a/doc/filters.texi
 +++ b/doc/filters.texi
-@@ -18730,6 +18730,52 @@ Set value which will be added to filtered result.
+@@ -19163,6 +19163,52 @@ Set value which will be added to filtered result.
  
  This filter supports the all above options as @ref{commands}.
  
@@ -71,10 +71,10 @@ index 426cb158da..dd5999e950 100644
  @section spp
  
 diff --git a/libavfilter/Makefile b/libavfilter/Makefile
-index 359ea7f903..b07c38c994 100644
+index 49c0c8342b..1cf16103de 100644
 --- a/libavfilter/Makefile
 +++ b/libavfilter/Makefile
-@@ -425,6 +425,7 @@ OBJS-$(CONFIG_SMARTBLUR_FILTER)              += vf_smartblur.o
+@@ -429,6 +429,7 @@ OBJS-$(CONFIG_SMARTBLUR_FILTER)              += vf_smartblur.o
  OBJS-$(CONFIG_SOBEL_FILTER)                  += vf_convolution.o
  OBJS-$(CONFIG_SOBEL_OPENCL_FILTER)           += vf_convolution_opencl.o opencl.o \
                                                  opencl/convolution.o
@@ -83,17 +83,17 @@ index 359ea7f903..b07c38c994 100644
  OBJS-$(CONFIG_SPP_FILTER)                    += vf_spp.o qp_table.o
  OBJS-$(CONFIG_SR_FILTER)                     += vf_sr.o
 diff --git a/libavfilter/allfilters.c b/libavfilter/allfilters.c
-index 452c030706..835dfa3a71 100644
+index ae74f9c891..4db32e8d31 100644
 --- a/libavfilter/allfilters.c
 +++ b/libavfilter/allfilters.c
-@@ -404,6 +404,7 @@ extern AVFilter ff_vf_signature;
- extern AVFilter ff_vf_smartblur;
- extern AVFilter ff_vf_sobel;
- extern AVFilter ff_vf_sobel_opencl;
-+extern AVFilter ff_vf_spatiotemporalinfo;
- extern AVFilter ff_vf_split;
- extern AVFilter ff_vf_spp;
- extern AVFilter ff_vf_sr;
+@@ -409,6 +409,7 @@ extern const AVFilter ff_vf_signature;
+ extern const AVFilter ff_vf_smartblur;
+ extern const AVFilter ff_vf_sobel;
+ extern const AVFilter ff_vf_sobel_opencl;
++extern const AVFilter ff_vf_spatiotemporalinfo;
+ extern const AVFilter ff_vf_split;
+ extern const AVFilter ff_vf_spp;
+ extern const AVFilter ff_vf_sr;
 diff --git a/libavfilter/vf_spatiotemporalinfo.c b/libavfilter/vf_spatiotemporalinfo.c
 new file mode 100644
 index 0000000000..1d74eace4b
