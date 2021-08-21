@@ -42,12 +42,6 @@
 #include <fstream>
 #include <vector>
 
-#ifdef _WIN32
-#include <Winsock2.h>
-#else
-#include <netinet/in.h>
-#endif
-
 using namespace std;
 
 constexpr uint32_t nalu_max_size = 8000000;
@@ -103,6 +97,11 @@ struct NALU
   {
     return int(nal_unit_type) <= int(NaluType::NALU_TYPE_IDR);
   }
+
+  NaluType get_nalu_type()
+  {
+    return nal_unit_type;
+  }
 };
 
 /*!
@@ -143,6 +142,7 @@ public:
 
   bool is_nalu_vcl() { return m_nalu.is_nalu_vcl(); }
   SliceType get_slice_type() { return m_slice_type; }
+  NaluType get_nalu_type() { return m_nalu.get_nalu_type(); }
 
   //! The following functions will be implemented in the class' specialisations
   virtual int get_packet(ifstream& ifs) = 0;
@@ -152,7 +152,7 @@ public:
 /*!
  *
  * \brief
- * The Real-time Transfer Protocol (RTP) specialization of the Packet class
+ * The Real-time Transfer Protocol (RTP) specialisation of the Packet class
  *
  * \author
  * Matteo Naccari

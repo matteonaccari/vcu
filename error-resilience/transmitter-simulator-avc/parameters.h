@@ -62,10 +62,10 @@ private:
 
 public:
   //! First constructor: parameters are passed through command line
-  Parameters(char** argv);
+  Parameters(const char** argv);
 
   //! Second constructor: parameters are passed through configuration file
-  Parameters(char* argv);
+  Parameters(const char* argv);
 
   ~Parameters() {};
 

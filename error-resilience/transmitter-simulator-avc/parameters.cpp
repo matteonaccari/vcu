@@ -52,7 +52,7 @@
  *
 */
 
-Parameters::Parameters(char** argv)
+Parameters::Parameters(const char** argv)
   : m_bitstream_original(argv[1])
   , m_bitstream_transmitted(argv[2])
   , m_loss_pattern_file(argv[3])
@@ -79,7 +79,7 @@ Parameters::Parameters(char** argv)
  *
 */
 
-Parameters::Parameters(char* argv)
+Parameters::Parameters(const char* argv)
 {
   string line;
   int i = 0;

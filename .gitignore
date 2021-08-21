@@ -5,3 +5,4 @@ bin/
 *.docx
 __pycache__/
 *.mex
+packages/

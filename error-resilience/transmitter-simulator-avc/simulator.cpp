@@ -80,7 +80,7 @@ Simulator::Simulator(const Parameters& p)
   ifstream  fp_losspattern(m_param.get_loss_pattern_filename().c_str(), ifstream::in);
 
   if (!fp_losspattern) {
-    runtime_error("Cannot open " + m_param.get_loss_pattern_filename() + " loss pattern file, abort");
+    throw runtime_error("Cannot open " + m_param.get_loss_pattern_filename() + " loss pattern file, abort");
   }
 
   fp_losspattern.seekg(0, ios_base::end);
@@ -182,6 +182,9 @@ void Simulator::run_simulator()
       i = 0;
     }
   }
+
+  // Close the transmitted file so any caller can take action on it
+  m_fp_tr_bitstream.close();
 }
 
 /*!

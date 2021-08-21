@@ -44,34 +44,34 @@
 #define VERSION 0.2
 
 /*!
- *  \brief
- * It prints on the screen a little help on the program usage
+ * \brief
+ * Prints on the screen a little help on the program usage
  *
- *  \author
- *  Matteo Naccari
+ * \author
+ * Matteo Naccari
  *
 */
 void inline_help()
 {
-  cout << endl << endl << "\tTransmitter Simulator for the H.264/AVC standard. Version " << VERSION << "\n\n";
+  cout << endl << endl << "\tTransmitter Simulator for the H.264/AVC standard. Version " << VERSION << endl << endl;
   cout << "\tCopyright Matteo Naccari" << endl << endl;
-  cout << "\tUsage (1): transmitter-simulator-avc <in_bitstream> <out_bitstream> <loss_pattern_file> <packet_type> <offset> <modality>\n\n";
-  cout << "\tUsage (2): transmitter-simulator-avc <configuration_file>\n\n";
-  cout << "See configuration file for further information on parameters.\n\n";
+  cout << "\tUsage (1): transmitter-simulator-avc <in_bitstream> <out_bitstream> <loss_pattern_file> <packet_type> <offset> <modality>" << endl << endl;
+  cout << "\tUsage (2): transmitter-simulator-avc <configuration_file>" << endl << endl;
+  cout << "See configuration file for further information on parameters." << endl << endl;
 }
 
 /*!
- *  \brief
+ * \brief
  * The main function, i.e. the entry point of the program
- *  Note:
- *      The error patter file must contain only '0' and '1' ASCII
- *      characters (8 bits). The character '0' means that no channel error
- *      occurred whilst the character '1' means that a channel error
- *      occurred. A burst of channel errors is defined as a contiguous sequence of 2
- *      or more characters '1'.
+ * Note:
+ *   The error pattern file must contain only '0' and '1' ASCII
+ *   characters (8 bits). The character '0' means that no channel error
+ *   occurred whilst the character '1' means that a channel error
+ *   occurred. A burst of channel errors is defined as a contiguous sequence of 2
+ *   or more characters '1'.
  *
- *  \author
- *  Matteo Naccari
+ * \author
+ * Matteo Naccari
  *
 */
 
@@ -81,9 +81,9 @@ int main(int argc, char** argv) {
 
   try {
     if (argc == 2) {
-      p = make_unique<Parameters>(argv[1]);
+      p = make_unique<Parameters>((const char*)(argv[1]));
     } else if (argc == 7) {
-      p = make_unique<Parameters>(argv);
+      p = make_unique<Parameters>((const char**)(argv));
     } else {
       inline_help();
       return EXIT_SUCCESS;

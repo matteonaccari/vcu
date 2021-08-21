@@ -145,11 +145,13 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="md5.cpp" />
     <ClCompile Include="packet.cpp" />
     <ClCompile Include="parameters.cpp" />
     <ClCompile Include="simulator.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="md5.h" />
     <ClInclude Include="packet.h" />
     <ClInclude Include="parameters.h" />
     <ClInclude Include="simulator.h" />
