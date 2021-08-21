@@ -35,11 +35,11 @@
  *
 */
 
-#include "pch.h"
-#include "../parameters.cpp"
-#include "../packet.cpp"
-#include "../simulator.cpp"
-#include "../md5.cpp"
+#include "gtest/gtest.h"
+#include "parameters.h"
+#include "packet.h"
+#include "simulator.h"
+#include "md5.h"
 #include <string>
 #include <fstream>
 #include <vector>
@@ -517,7 +517,7 @@ TEST(TestPacketRTP, TestPacketParserFailsOnWrongSsrc)
 //////////////////////////////////////////////////////////////////
 TEST(TestSimulator, TestConstructorReactsOnWrongBitstreamName)
 {
-  const char* cmdLine[] = { "transmitter-simulator-avc.exe", "non_existing_err.bin", "", "whatever_plr_0", "0", "0", "0"};
+  const char* cmdLine[] = { "transmitter-simulator-avc.exe", "non_existing.bin", "", "whatever_plr_0", "0", "0", "0"};
 
   Parameters p(cmdLine);
 
@@ -526,7 +526,7 @@ TEST(TestSimulator, TestConstructorReactsOnWrongBitstreamName)
 
 TEST(TestSimulator, TestConstructorReactsOnWrongErrorPattern)
 {
-  const char* cmdLine[] = { "transmitter-simulator-avc.exe", "bitstream_annexb.264", "bitstream_annexb_err.264", "whatever_plr_0", "0", "0", "0" };
+  const char* cmdLine[] = { "transmitter-simulator-avc.exe", "../unit-tests/bitstream_annexb.264", "bitstream_annexb_err.264", "whatever_plr_0", "0", "0", "0" };
 
   Parameters p(cmdLine);
 
@@ -537,7 +537,7 @@ TEST(TestSimulator, TestConstructorReactsOnWrongErrorPattern)
 
 TEST(TestSimulator, TestPlr0LeavesBitstreamIntact)
 {
-  const char* cmdLine[] = { "transmitter-simulator-avc.exe", "bitstream_annexb.264", "bitstream_annexb_err.264", "error_plr_0", "1", "0", "0" };
+  const char* cmdLine[] = { "transmitter-simulator-avc.exe", "../unit-tests/bitstream_annexb.264", "bitstream_annexb_err.264", "../unit-tests/error_plr_0", "1", "0", "0" };
   ifstream ifs;
 
   Parameters p(cmdLine);
@@ -547,7 +547,7 @@ TEST(TestSimulator, TestPlr0LeavesBitstreamIntact)
   s.run_simulator();
 
   // Compute MD5s for the original and corrupted
-  ifs.open("bitstream_annexb.264", ios::binary);
+  ifs.open("../unit-tests/bitstream_annexb.264", ios::binary);
   string data_original = string(std::istreambuf_iterator<char>(ifs), std::istreambuf_iterator<char>());
   ifs.close();
 
@@ -562,7 +562,7 @@ TEST(TestSimulator, TestPlr0LeavesBitstreamIntact)
 
 TEST(TestSimulator, TestPlr3GivesTheExpectMD5)
 {
-  const char* cmdLine[] = { "transmitter-simulator-avc.exe", "bitstream_annexb.264", "bitstream_annexb_err.264", "../error_plr_3", "1", "10", "0" };
+  const char* cmdLine[] = { "transmitter-simulator-avc.exe", "../unit-tests/bitstream_annexb.264", "bitstream_annexb_err.264", "../error_plr_3", "1", "10", "0" };
   ifstream ifs;
   const string expected_md5 = "520e6ce1387750e8f5f218af5865c69b";
 
