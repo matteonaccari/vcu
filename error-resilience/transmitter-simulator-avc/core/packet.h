@@ -46,6 +46,8 @@ using namespace std;
 
 constexpr uint32_t nalu_max_size = 8000000;
 
+typedef unsigned char byte;
+
 enum class SliceType
 {
   P_SLICE = 0,

@@ -37,6 +37,7 @@
 #include "packet.h"
 #include <string>
 #include <iomanip>
+#include <cstring>
 
 #ifdef _WIN32
 #include <Winsock2.h>
