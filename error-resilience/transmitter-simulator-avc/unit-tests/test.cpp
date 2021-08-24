@@ -580,3 +580,9 @@ TEST(TestSimulator, TestPlr3GivesTheExpectMD5)
 
   remove("bitstream_annexb_err.264");
 }
+
+int main(int argc, char** argv)
+{
+  ::testing::InitGoogleTest(&argc, argv);
+  return RUN_ALL_TESTS();
+}
