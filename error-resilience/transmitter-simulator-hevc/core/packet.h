@@ -96,6 +96,7 @@ public:
 
   int get_packet(ifstream& bits);
   int write_packet(ofstream& ofs);
+  NaluType get_nalu_type() { return m_nalu.get_nalu_type(); }
 };
 
 #endif

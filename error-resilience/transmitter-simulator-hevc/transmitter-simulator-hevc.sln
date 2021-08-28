@@ -10,6 +10,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "transmitter-simulator-hevc"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "core", "core\core.vcxproj", "{DA5D666F-BB0C-43A5-84C6-74B25FE7C0BA}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "unit-tests", "unit-tests\unit-tests.vcxproj", "{E2F7CDC4-2BAC-4E44-A4E6-DE4DEBCCE990}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -34,6 +36,14 @@ Global
 		{DA5D666F-BB0C-43A5-84C6-74B25FE7C0BA}.Release|x64.Build.0 = Release|x64
 		{DA5D666F-BB0C-43A5-84C6-74B25FE7C0BA}.Release|x86.ActiveCfg = Release|Win32
 		{DA5D666F-BB0C-43A5-84C6-74B25FE7C0BA}.Release|x86.Build.0 = Release|Win32
+		{E2F7CDC4-2BAC-4E44-A4E6-DE4DEBCCE990}.Debug|x64.ActiveCfg = Debug|x64
+		{E2F7CDC4-2BAC-4E44-A4E6-DE4DEBCCE990}.Debug|x64.Build.0 = Debug|x64
+		{E2F7CDC4-2BAC-4E44-A4E6-DE4DEBCCE990}.Debug|x86.ActiveCfg = Debug|Win32
+		{E2F7CDC4-2BAC-4E44-A4E6-DE4DEBCCE990}.Debug|x86.Build.0 = Debug|Win32
+		{E2F7CDC4-2BAC-4E44-A4E6-DE4DEBCCE990}.Release|x64.ActiveCfg = Release|x64
+		{E2F7CDC4-2BAC-4E44-A4E6-DE4DEBCCE990}.Release|x64.Build.0 = Release|x64
+		{E2F7CDC4-2BAC-4E44-A4E6-DE4DEBCCE990}.Release|x86.ActiveCfg = Release|Win32
+		{E2F7CDC4-2BAC-4E44-A4E6-DE4DEBCCE990}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

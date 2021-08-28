@@ -82,9 +82,9 @@ int main(int argc, char** argv)
 
   try {
     if (argc == 2) {
-      p = make_unique<Parameters>(argv[1]);
+      p = make_unique<Parameters>((const char*)(argv[1]));
     } else if (argc == 6) {
-      p = make_unique<Parameters>(argv);
+      p = make_unique<Parameters>((const char**)(argv));
     } else {
       inline_help();
       return EXIT_SUCCESS;

@@ -207,6 +207,11 @@ struct NALU
   {
     return nal_unit_type == NaluType::NAL_UNIT_SPS;
   }
+
+  NaluType get_nalu_type()
+  {
+    return nal_unit_type;
+  }
 };
 
 /*!
