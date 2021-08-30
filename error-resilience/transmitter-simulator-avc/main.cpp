@@ -40,8 +40,11 @@
 #include <iostream>
 #include <fstream>
 #include <exception>
+#include <memory>
 
 #define VERSION 0.2
+
+using namespace std;
 
 /*!
  * \brief

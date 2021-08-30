@@ -41,6 +41,7 @@
 #include "simulator.h"
 #include <iostream>
 #include <exception>
+#include <memory>
 
 using namespace std;
 
