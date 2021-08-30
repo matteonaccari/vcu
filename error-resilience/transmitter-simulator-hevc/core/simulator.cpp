@@ -182,6 +182,9 @@ void Simulator::run_simulator()
       i = 0;
     }
   }
+
+  // Close the transmitted file so any caller can take action on it
+  m_fp_tr_bitstream.close();
 }
 
 /*!

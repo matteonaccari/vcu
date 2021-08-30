@@ -87,6 +87,7 @@ public:
 
   bool is_nalu_slice() { return m_nalu.is_slice(); }
   bool is_nalu_vcl() { return m_nalu.is_vcl(); }
+  bool is_nalu_vps() { return m_nalu.is_vps(); }
   bool is_nalu_pps() { return m_nalu.is_pps(); }
   bool is_nalu_sps() { return m_nalu.is_sps(); }
   SliceType get_slice_type() { return m_slice_type; }

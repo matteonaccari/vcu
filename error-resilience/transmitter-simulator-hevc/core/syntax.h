@@ -193,25 +193,15 @@ struct NALU
       || nal_unit_type == NaluType::NAL_UNIT_CODED_SLICE_RASL_R;
   }
 
-  bool is_vcl()
-  {
-    return int(nal_unit_type) < 32;
-  }
+  bool is_vcl() { return int(nal_unit_type) < 32; }
 
-  bool is_pps()
-  {
-    return nal_unit_type == NaluType::NAL_UNIT_PPS;
-  }
+  bool is_vps() { return nal_unit_type == NaluType::NAL_UNIT_VPS; }
 
-  bool is_sps()
-  {
-    return nal_unit_type == NaluType::NAL_UNIT_SPS;
-  }
+  bool is_pps() { return nal_unit_type == NaluType::NAL_UNIT_PPS; }
 
-  NaluType get_nalu_type()
-  {
-    return nal_unit_type;
-  }
+  bool is_sps() { return nal_unit_type == NaluType::NAL_UNIT_SPS; }
+
+  NaluType get_nalu_type() { return nal_unit_type; }
 };
 
 /*!
