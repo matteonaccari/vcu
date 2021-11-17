@@ -1,0 +1,448 @@
+From eb80f13ce537359ff7ca3e0aa22f548e6dd8c6f1 Mon Sep 17 00:00:00 2001
+From: Matteo Naccari <matteo.naccari@gmail.com>
+Date: Tue, 16 Nov 2021 19:38:41 +0000
+Subject: [PATCH] SDR to HDR conversion
+
+---
+ doc/filters.texi         |  11 ++
+ libavfilter/Makefile     |   1 +
+ libavfilter/allfilters.c |   1 +
+ libavfilter/vf_sdr2hdr.c | 379 +++++++++++++++++++++++++++++++++++++++
+ 4 files changed, 392 insertions(+)
+ create mode 100644 libavfilter/vf_sdr2hdr.c
+
+diff --git a/doc/filters.texi b/doc/filters.texi
+index b4f888c14d..1b99e9b327 100644
+--- a/doc/filters.texi
++++ b/doc/filters.texi
+@@ -18863,6 +18863,17 @@ Set the flag to pass scene change frames to the next filter. Default value is @c
+ You can enable it if you want to get snapshot of scene change frames only.
+ @end table
+
++@section sdr2hdr
++This filter converts the input sequence from the Standard Dynamic Range (SDR) to its High Dynamic Range (HDR) counterpart
++using the Hybrid Log-Gamma (HLG) transfer characteristics. More details are available here:
++@url{https://www.itu.int/dms_pub/itu-r/opb/rep/R-REP-BT.2408-4-2021-PDF-E.pdf}
++
++The "Scene referred mapping of SDR into HLG" method is implemented.
++Please note that the conversion merely places an SDR content into an HDR-HLG one,
++assuming that 100% of the SDR signal is mapped into 75% HDR. Accordingly, no re-grading
++is performed here. More information is also available from:
++@url{https://jvet-experts.org/doc_end_user/documents/7_Torino/wg11/JVET-G0059-v2.zip}
++
+ @anchor{selectivecolor}
+ @section selectivecolor
+
+diff --git a/libavfilter/Makefile b/libavfilter/Makefile
+index 08edc92d8c..2eadac0c4d 100644
+--- a/libavfilter/Makefile
++++ b/libavfilter/Makefile
+@@ -421,6 +421,7 @@ OBJS-$(CONFIG_SCALE2REF_NPP_FILTER)          += vf_scale_npp.o scale_eval.o
+ OBJS-$(CONFIG_SCDET_FILTER)                  += vf_scdet.o
+ OBJS-$(CONFIG_SCHARR_FILTER)                 += vf_convolution.o
+ OBJS-$(CONFIG_SCROLL_FILTER)                 += vf_scroll.o
++OBJS-$(CONFIG_SDR2HDR_FILTER)                += vf_sdr2hdr.o
+ OBJS-$(CONFIG_SEGMENT_FILTER)                += f_segment.o
+ OBJS-$(CONFIG_SELECT_FILTER)                 += f_select.o
+ OBJS-$(CONFIG_SELECTIVECOLOR_FILTER)         += vf_selectivecolor.o
+diff --git a/libavfilter/allfilters.c b/libavfilter/allfilters.c
+index f250020159..7da429240b 100644
+--- a/libavfilter/allfilters.c
++++ b/libavfilter/allfilters.c
+@@ -402,6 +402,7 @@ extern const AVFilter ff_vf_scale2ref_npp;
+ extern const AVFilter ff_vf_scdet;
+ extern const AVFilter ff_vf_scharr;
+ extern const AVFilter ff_vf_scroll;
++extern const AVFilter ff_vf_sdr2hdr;
+ extern const AVFilter ff_vf_segment;
+ extern const AVFilter ff_vf_select;
+ extern const AVFilter ff_vf_selectivecolor;
+diff --git a/libavfilter/vf_sdr2hdr.c b/libavfilter/vf_sdr2hdr.c
+new file mode 100644
+index 0000000000..07a344dbfd
+--- /dev/null
++++ b/libavfilter/vf_sdr2hdr.c
+@@ -0,0 +1,379 @@
++/*
++ * Copyright (c) 2021 Matteo Naccari <matteo.naccari@gmail.com>
++ *
++ * This file is part of FFmpeg.
++ *
++ * FFmpeg is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * FFmpeg is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with FFmpeg; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
++ */
++
++/**
++ * @file
++ * Standard Dynamic Range (SDR) to High Dynamic Range (HDR) using the Hybrid Log-Gamma (HLG) transfer characteristics
++ *
++ * @see https://www.itu.int/dms_pub/itu-r/opb/rep/R-REP-BT.2408-4-2021-PDF-E.pdf
++ */
++
++#include "libavutil/avassert.h"
++#include "libavutil/imgutils.h"
++#include "libavutil/opt.h"
++#include "avfilter.h"
++#include "formats.h"
++#include "internal.h"
++#include "video.h"
++#include "framesync.h"
++#include <math.h>
++
++typedef struct Sdr2HdrContext {
++    const AVClass *class;
++    int internal_memory_initialised;
++    float *real_value_pixels[3];
++} Sdr2HdrContext;
++
++#define MAX(a, b) ((a) > (b) ? (a) : (b))
++#define MIN(a, b) ((a) < (b) ? (a) : (b))
++#define CLIP3(m, M, value) MAX(m, MIN(M, value))
++
++#define OFFSET(x) offsetof(Sdr2HdrContext, x)
++#define FLAGS AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_VIDEO_PARAM
++static const AVOption sdr2hdr_options[] = {
++    { NULL }
++};
++
++AVFILTER_DEFINE_CLASS(sdr2hdr);
++
++static int copy_pixels_from(AVFrame *in, Sdr2HdrContext *sdr2hdr_ctx)
++{
++    int rows = in->height;
++    int cols = in->width;
++
++    // Get the pointer to the image pixels.
++    // As per the input requirement these are in 4:4:4 chroma format with 10 bpp
++    const uint16_t *y = (const uint16_t *)in->data[0];
++    const uint16_t *cb = (const uint16_t *)in->data[1];
++    const uint16_t *cr = (const uint16_t *)in->data[2];
++
++
++    if (!sdr2hdr_ctx->internal_memory_initialised) {
++        for(int plane = 0; plane < 3; plane++) {
++            size_t data_sz = rows * cols * sizeof(float);
++            if(!(sdr2hdr_ctx->real_value_pixels[plane] = av_malloc(data_sz))) {
++                return AVERROR(ENOMEM);
++            }
++        }
++        sdr2hdr_ctx->internal_memory_initialised = 1;
++    }
++
++    for(int r = 0, idx = 0; r < rows; r++) {
++        for(int c = 0; c < cols; c++, idx++) {
++            sdr2hdr_ctx->real_value_pixels[0][idx] = y[idx];
++            sdr2hdr_ctx->real_value_pixels[1][idx] = cb[idx];
++            sdr2hdr_ctx->real_value_pixels[2][idx] = cr[idx];
++        }
++    }
++
++    return 0;
++}
++
++static void inverse_quantisation(Sdr2HdrContext *sdr2hdr_ctx, const int height, const int width)
++{
++    const int input_bd = 10; // AV_PIX_FMT_YUV444P10
++    const float scaling = (float)(1 << (input_bd - 8));
++    float *y = sdr2hdr_ctx->real_value_pixels[0];
++    float *cb = sdr2hdr_ctx->real_value_pixels[1];
++    float *cr = sdr2hdr_ctx->real_value_pixels[2];
++
++    for(int r = 0, idx = 0; r < height; r++) {
++        for(int c = 0; c < width; c++, idx++) {
++            float current_y = y[idx];
++            float current_cb = cb[idx];
++            float current_cr = cr[idx];
++
++            y[idx] = CLIP3(0.0f, 1.0f, ((current_y / scaling - 16.0f)) / 219);
++            cb[idx] = CLIP3(-0.5f, 0.5f, ((current_cb / scaling - 128.0f)) / 224);
++            cr[idx] = CLIP3(-0.5f, 0.5f, ((current_cr / scaling - 128.0f)) / 224);
++        }
++    }
++}
++
++static void ycbcr_to_rgb_bt709(Sdr2HdrContext *sdr2hdr_ctx, const int height, const int width)
++{
++    const float T[3][3] = { { 1.0f, 0.0f, 1.57480f },
++                            { 1.0f, -0.18733f , -0.46813f },
++                            { 1.0f, 1.85563f, 0.0f } };
++
++    float *y = sdr2hdr_ctx->real_value_pixels[0];
++    float *cb = sdr2hdr_ctx->real_value_pixels[1];
++    float *cr = sdr2hdr_ctx->real_value_pixels[2];
++
++    float *red = sdr2hdr_ctx->real_value_pixels[0];
++    float *green = sdr2hdr_ctx->real_value_pixels[1];
++    float *blue = sdr2hdr_ctx->real_value_pixels[2];
++
++    for(int r = 0, idx = 0; r < height; r++) {
++        for(int c = 0; c < width; c++, idx++) {
++            float current_y = y[idx];
++            float current_cb = cb[idx];
++            float current_cr = cr[idx];
++            red[idx] = CLIP3(0.0f, 1.0f, T[0][0] * current_y + T[0][1] * current_cb + T[0][2] * current_cr);
++            green[idx] = CLIP3(0.0f, 1.0f, T[1][0] * current_y + T[1][1] * current_cb + T[1][2] * current_cr);
++            blue[idx] = CLIP3(0.0f, 1.0f, T[2][0] * current_y + T[2][1] * current_cb + T[2][2] * current_cr);
++        }
++    }
++}
++
++static void bt1886_eotf(Sdr2HdrContext *sdr2hdr_ctx, const int height, const int width, const float display_gamma, const float lw, const float lb)
++{
++    const float argument = powf(lw, 1.0f / display_gamma) - powf(lb, 1.0f / display_gamma);
++    const float alpha = powf(argument, display_gamma);
++    const float beta = powf(lb, 1.0f / display_gamma) / argument;
++    const float max_value = alpha * powf(1.0f + beta, display_gamma);
++
++    float *red = sdr2hdr_ctx->real_value_pixels[0];
++    float *green = sdr2hdr_ctx->real_value_pixels[1];
++    float *blue = sdr2hdr_ctx->real_value_pixels[2];
++
++    float *red_ll = sdr2hdr_ctx->real_value_pixels[0];
++    float *green_ll = sdr2hdr_ctx->real_value_pixels[1];
++    float *blue_ll = sdr2hdr_ctx->real_value_pixels[2];
++
++    for(int r = 0, idx = 0; r < height; r++) {
++        for(int c = 0; c < width; c++, idx++) {
++            red_ll[idx] = alpha * powf(MAX(0.0f, red[idx] + beta), display_gamma) / max_value;
++            green_ll[idx] = alpha * powf(MAX(0.0f, green[idx] + beta), display_gamma) / max_value;
++            blue_ll[idx] = alpha * powf(MAX(0.0f, blue[idx] + beta), display_gamma) / max_value;
++        }
++    }
++}
++
++static void rgb709_to_rgb2020(Sdr2HdrContext *sdr2hdr_ctx, const int height, const int width)
++{
++
++    const float T[3][3] = {{ 0.627404078626f, 0.329282097415f, 0.043313797587f },
++                           { 0.069097233123f, 0.919541035593f, 0.011361189924f },
++                           { 0.016391587664f, 0.088013255546f, 0.895595009604f }};
++
++    float *red_709 = sdr2hdr_ctx->real_value_pixels[0];
++    float *green_709 = sdr2hdr_ctx->real_value_pixels[1];
++    float *blue_709 = sdr2hdr_ctx->real_value_pixels[2];
++
++    float *red_2020 = sdr2hdr_ctx->real_value_pixels[0];
++    float *green_2020 = sdr2hdr_ctx->real_value_pixels[1];
++    float *blue_2020 = sdr2hdr_ctx->real_value_pixels[2];
++
++    for(int r = 0, idx = 0; r < height; r++) {
++        for(int c = 0; c < width; c++, idx++) {
++            float c_red = red_709[idx];
++            float c_green = green_709[idx];
++            float c_blue = blue_709[idx];
++            red_2020[idx] = CLIP3(0.0f, 1.0f, T[0][0] * c_red + T[0][1] * c_green + T[0][2] * c_blue);
++            green_2020[idx] = CLIP3(0.0f, 1.0f, T[1][0] * c_red + T[1][1] * c_green + T[1][2] * c_blue);
++            blue_2020[idx] = CLIP3(0.0f, 1.0f, T[2][0] * c_red + T[2][1] * c_green + T[2][2] * c_blue);
++        }
++    }
++}
++
++static void scaling_scene_referred(Sdr2HdrContext *sdr2hdr_ctx, const int height, const int width)
++{
++    const float scale = 0.2546f;
++    const float system_gamma = 1.03f;
++    const float exponent = 1.0f / system_gamma;
++
++    float *red_2020 = sdr2hdr_ctx->real_value_pixels[0];
++    float *green_2020 = sdr2hdr_ctx->real_value_pixels[1];
++    float *blue_2020 = sdr2hdr_ctx->real_value_pixels[2];
++
++    float *red_sr = sdr2hdr_ctx->real_value_pixels[0];
++    float *green_sr = sdr2hdr_ctx->real_value_pixels[1];
++    float *blue_sr = sdr2hdr_ctx->real_value_pixels[2];
++
++    for(int r = 0, idx = 0; r < height; r++) {
++        for(int c = 0; c < width; c++, idx++) {
++            red_sr[idx] = powf(scale * red_2020[idx], exponent);
++            green_sr[idx] = powf(scale * green_2020[idx], exponent);
++            blue_sr[idx] = powf(scale * blue_2020[idx], exponent);
++        }
++    }
++}
++
++static void hlg_oetf(Sdr2HdrContext *sdr2hdr_ctx, const int height, const int width)
++{
++    const float a = 0.17883277f;
++    const float b = 0.28466892f;
++    const float c = 0.55991073f;
++    const float splice_point = 1.0f / 12.0f;
++
++    float *red_sr = sdr2hdr_ctx->real_value_pixels[0];
++    float *green_sr = sdr2hdr_ctx->real_value_pixels[1];
++    float *blue_sr = sdr2hdr_ctx->real_value_pixels[2];
++
++    float *red_hlg = sdr2hdr_ctx->real_value_pixels[0];
++    float *green_hlg = sdr2hdr_ctx->real_value_pixels[1];
++    float *blue_hlg = sdr2hdr_ctx->real_value_pixels[2];
++
++    for(int x = 0, idx = 0; x < height; x++) {
++        for(int y = 0; y < width; y++, idx++) {
++            float current_red = red_sr[idx];
++            float current_green = green_sr[idx];
++            float current_blue = blue_sr[idx];
++
++            red_hlg[idx] = current_red <= splice_point ? sqrtf(3.0f * current_red) : a * logf(12.0f * current_red - b) + c;
++            green_hlg[idx] = current_green <= splice_point ? sqrtf(3.0f * current_green) : a * logf(12.0f * current_green - b) + c;
++            blue_hlg[idx] = current_blue <= splice_point ? sqrtf(3.0f * current_blue) : a * logf(12.0f * current_blue - b) + c;
++        }
++    }
++}
++
++static void rgb_to_ycbcr_bt2020_and_copy(Sdr2HdrContext *sdr2hdr_ctx, const int height, const int width, AVFrame *out)
++{
++    const int bit_depth = 10;
++    const float max_value = (float)((1 << bit_depth) - 1);
++    const float scaling = (float)(1 << (bit_depth - 8));
++
++    const float T[3][3] = {{0.2627f, 0.6780f, 0.0593f},
++                           {-0.13963f, -0.36037f, 0.5f},
++                           {0.5f, -0.459786f, -0.040214f}};
++    float *red = sdr2hdr_ctx->real_value_pixels[0];
++    float *green = sdr2hdr_ctx->real_value_pixels[1];
++    float *blue = sdr2hdr_ctx->real_value_pixels[2];
++
++    uint16_t *y = (uint16_t*)out->data[0];
++    uint16_t *cb = (uint16_t*)out->data[1];
++    uint16_t *cr = (uint16_t*)out->data[2];
++
++    for(int r = 0, idx = 0; r < height; r++) {
++        for(int c = 0; c < width; c++, idx++) {
++            float yf = scaling * (219.0f * (T[0][0] * red[idx] + T[0][1] * green[idx] + T[0][2] * blue[idx]) + 16.0f);
++            float cbf = scaling * (224.0f * (T[1][0] * red[idx] + T[1][1] * green[idx] + T[1][2] * blue[idx]) + 128.0f);
++            float crf = scaling * (224.0f * (T[2][0] * red[idx] + T[2][1] * green[idx] + T[2][2] * blue[idx]) + 128.0f);
++
++            y[idx] = (uint16_t)CLIP3(0.0f, max_value, yf + 0.5f);
++            cb[idx] = (uint16_t)CLIP3(0.0f, max_value, cbf + 0.5f);
++            cr[idx] = (uint16_t)CLIP3(0.0f, max_value, crf + 0.5f);
++        }
++    }
++}
++
++static av_cold int init(AVFilterContext *ctx)
++{
++    Sdr2HdrContext *sdr2hdr_ctx = ctx->priv;
++    int i;
++
++    for (i = 0; i < 3; i++) {
++        sdr2hdr_ctx->real_value_pixels[i] = NULL;
++    }
++
++    return 0;
++}
++
++static int query_formats(AVFilterContext *ctx)
++{
++    static const enum AVPixelFormat input_pix_fmts[] = {AV_PIX_FMT_YUV444P10, AV_PIX_FMT_NONE};
++    AVFilterFormats *fmts_list;
++
++    fmts_list = ff_make_format_list(input_pix_fmts);
++    if (!fmts_list)
++        return AVERROR(ENOMEM);
++    return ff_set_common_formats(ctx, fmts_list);
++}
++
++static int config_props(AVFilterLink *inlink)
++{
++    AVFilterContext *ctx  = inlink->dst;
++    Sdr2HdrContext *sdr2hdr_ctx = ctx->priv;
++    sdr2hdr_ctx->internal_memory_initialised = 0;
++    return 0;
++}
++
++static int filter_frame(AVFilterLink *inlink, AVFrame *in)
++{
++    AVFilterContext *ctx = inlink->dst;
++    Sdr2HdrContext *sdr2hdr_ctx = ctx->priv;
++    int rows = in->height;
++    int cols = in->width;
++    const float display_gamma = 2.4f;
++    const float lw = 100.0f;
++    const float lb = 0.1f;
++
++    // Copy image pixels into the internal, floating point value memory
++    int ret = copy_pixels_from(in, sdr2hdr_ctx);
++    if(ret){
++        return ret;
++    }
++
++    // Bring the input pixels in the normalised range [0, 1] for luma and [-0.5, 0.5] for chroma
++    inverse_quantisation(sdr2hdr_ctx, rows, cols);
++
++    // Convert back to the RGB colour space
++    ycbcr_to_rgb_bt709(sdr2hdr_ctx, rows, cols);
++
++    // Apply the BT.1886 EOTF to bring the pixels in the linear display light domain
++    bt1886_eotf(sdr2hdr_ctx, rows, cols, display_gamma, lw, lb);
++
++    // Change the colour primaries to BT.2020
++    rgb709_to_rgb2020(sdr2hdr_ctx, rows, cols);
++
++    // Perform the scaling to obtain scene referred material
++    scaling_scene_referred(sdr2hdr_ctx, rows, cols);
++
++    // Apply the BT.2100 HLG OETF
++    hlg_oetf(sdr2hdr_ctx, rows, cols);
++
++    // Convert back to YCbCr, inverse quantise and copy back to the input frame
++    rgb_to_ycbcr_bt2020_and_copy(sdr2hdr_ctx, rows, cols, in);
++
++    return ff_filter_frame(ctx->outputs[0], in);
++}
++
++static av_cold void uninit(AVFilterContext *ctx)
++{
++    Sdr2HdrContext *sdr2hdr_ctx = ctx->priv;
++
++    for(int plane = 0; plane < 3; plane++) {
++        if (sdr2hdr_ctx->real_value_pixels[plane]) {
++            av_free(sdr2hdr_ctx->real_value_pixels[plane]);
++        }
++    }
++
++    sdr2hdr_ctx->internal_memory_initialised = 0;
++}
++
++static const AVFilterPad sdr2hdr_inputs[] = {
++    {
++        .name         = "default",
++        .type         = AVMEDIA_TYPE_VIDEO,
++        .config_props = config_props,
++        .filter_frame = filter_frame,
++    },
++};
++
++static const AVFilterPad sdr2hdr_outputs[] = {
++    {
++        .name = "default",
++        .type = AVMEDIA_TYPE_VIDEO,
++    },
++};
++
++AVFilter ff_vf_sdr2hdr = {
++    .name          = "sdr2hdr",
++    .description   = NULL_IF_CONFIG_SMALL("Put an SDR image into its HDR container using the HLG transfer characteristics."),
++    .priv_size     = sizeof(Sdr2HdrContext),
++    .init          = init,
++    .uninit        = uninit,
++    FILTER_INPUTS(sdr2hdr_inputs),
++    FILTER_OUTPUTS(sdr2hdr_outputs),
++    FILTER_QUERY_FUNC(query_formats),
++    .priv_class    = &sdr2hdr_class,
++    .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC,
++};
+\ No newline at end of file
+--
+2.17.1
+

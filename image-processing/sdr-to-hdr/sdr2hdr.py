@@ -43,7 +43,7 @@ is performed here. More information is also available from:
 https://jvet-experts.org/doc_end_user/documents/7_Torino/wg11/JVET-G0059-v2.zip
 
 Input signals are assumed in the YCbCr colour space with ITU-R BT.709 primaries,
-4:4:4 chroma format and in the video range. Bit depths of 8 and 10 bits are supported.
+4:4:4 chroma format and in the video range. Input bit depths of 8 and 10 bits are supported.
 
 Parameters:
     - Input:
@@ -56,8 +56,11 @@ Parameters:
 '''
 
 
-import numpy as np
+import sys
+from argparse import ArgumentParser
 from typing import Any, Tuple
+
+import numpy as np
 from nptyping import NDArray
 
 
@@ -67,9 +70,9 @@ def inverse_quantisation(y: NDArray[(Any, Any), np.float32], cb: NDArray[(Any, A
                          ) -> Tuple[NDArray[(Any, Any), np.float32], NDArray[(Any, Any), np.float32], NDArray[(Any, Any), np.float32]]:
 
     scaling = 1 << (bit_depth - 8)
-    y_n = np.clip(0, 1.0, (y / scaling - 16) / 219)
-    cb_n = np.clip(-0.5, 0.5, (cb / scaling - 128) / 224)
-    cr_n = np.clip(-0.5, 0.5, (cr / scaling - 128) / 224)
+    y_n = np.clip((y / scaling - 16) / 219, 0, 1.0)
+    cb_n = np.clip((cb / scaling - 128) / 224, -0.5, 0.5)
+    cr_n = np.clip((cr / scaling - 128) / 224, -0.5, 0.5)
 
     return y_n, cb_n, cr_n
 
@@ -77,12 +80,11 @@ def inverse_quantisation(y: NDArray[(Any, Any), np.float32], cb: NDArray[(Any, A
 def ycbcr_to_rgb_bt709(y: NDArray[(Any, Any), np.float32], cb: NDArray[(Any, Any), np.float32], cr: NDArray[(Any, Any), np.float32]
                        ) -> Tuple[NDArray[(Any, Any), np.float32], NDArray[(Any, Any), np.float32], NDArray[(Any, Any), np.float32]]:
 
-    # !!!!!!!!!!!!!!!!!!!!!!!!! Check this!!!!!!!!!!!!!!!!!!!!!!!!!!
     T = np.array([[1.0, 0.0, 1.57480], [1.0, -0.18733, -0.46813], [1.0, 1.85563, 0.0]])
 
-    r = np.clip(0, 1, T[0][0] * y + T[0][1] * cb + T[0][2] * cr)
-    g = np.clip(0, 1, T[1][0] * y + T[1][1] * cb + T[1][2] * cr)
-    b = np.clip(0, 1, T[2][0] * y + T[2][1] * cb + T[2][2] * cr)
+    r = np.clip(T[0][0] * y + T[0][1] * cb + T[0][2] * cr, 0, 1)
+    g = np.clip(T[1][0] * y + T[1][1] * cb + T[1][2] * cr, 0, 1)
+    b = np.clip(T[2][0] * y + T[2][1] * cb + T[2][2] * cr, 0, 1)
 
     return r, g, b
 
@@ -110,9 +112,9 @@ def rgb709_to_rgb2020(r709: NDArray[(Any, Any), np.float32], g709: NDArray[(Any,
         [0.069097233123, 0.919541035593, 0.011361189924],
         [0.016391587664, 0.088013255546, 0.895595009604]])
 
-    r2020 = np.clip(0, 1, r709 * T[0][0] + g709 * T[0][1] + b709 * T[0][2])
-    g2020 = np.clip(0, 1, r709 * T[1][0] + g709 * T[1][1] + b709 * T[1][2])
-    b2020 = np.clip(0, 1, r709 * T[2][0] + g709 * T[2][1] + b709 * T[2][2])
+    r2020 = np.clip(r709 * T[0][0] + g709 * T[0][1] + b709 * T[0][2], 0, 1)
+    g2020 = np.clip(r709 * T[1][0] + g709 * T[1][1] + b709 * T[1][2], 0, 1)
+    b2020 = np.clip(r709 * T[2][0] + g709 * T[2][1] + b709 * T[2][2], 0, 1)
 
     return r2020, g2020, b2020
 
@@ -120,7 +122,7 @@ def rgb709_to_rgb2020(r709: NDArray[(Any, Any), np.float32], g709: NDArray[(Any,
 def scaling_scene_referred(r: NDArray[(Any, Any), np.float32], g: NDArray[(Any, Any), np.float32], b: NDArray[(Any, Any), np.float32]
                            ) -> Tuple[NDArray[(Any, Any), np.float32], NDArray[(Any, Any), np.float32], NDArray[(Any, Any), np.float32]]:
 
-    scale = 0.2513
+    scale = 0.2546
     system_gamma = 1.03
 
     r_s = (scale * r) ** (1 / system_gamma)
@@ -228,6 +230,18 @@ def sdr2hdr(in_file_name: str, out_file_name: str, rows: int, cols: int, bit_dep
 
 
 if __name__ == "__main__":
-    input_file = r"C:\Users\matteon\repositories\jctvc-hm\bin\foreman_cif_444.yuv"
-    output_file = r"foreman_hdr.yuv"
-    sdr2hdr(input_file, output_file, 288, 352)
+    cmdline_parser = ArgumentParser(description="Perform the SDR to HDR video conversion")
+    cmdline_parser.add_argument("--input", type=str, required=True, help="Input file in YCbCr planar and 4:4:4 chroma format")
+    cmdline_parser.add_argument("--output", type=str, required=True, help="Output file in YCbCr planar and 4:4:4 chroma format")
+    cmdline_parser.add_argument("--height", type=int, required=True, help="Frame height")
+    cmdline_parser.add_argument("--width", type=int, required=True, help="Frame width")
+    cmdline_parser.add_argument("--bit-depth", type=int, default=8, help="Input bit depth")
+    cmdline_parser.add_argument("--frames", type=int, default=-1, help="Total number of frames to be processed, input -1 for all frames")
+
+    args = cmdline_parser.parse_args()
+
+    if len(sys.argv) < 9:
+        cmdline_parser.print_help()
+        sys.exit(0)
+
+    sdr2hdr(args.input, args.output, args.height, args.width, args.bit_depth, args.frames)
